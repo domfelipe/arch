@@ -119,7 +119,12 @@ pub fn auth_json_primary_path() -> PathBuf {
 }
 
 /// Legacy Grok auth path (`~/.grok/auth.json`) for **read-only** fallback.
+///
+/// `$ARCH_AUTH_LEGACY_PATH` overrides (tests / emergency read source).
 pub fn auth_json_legacy_path() -> PathBuf {
+    if let Ok(p) = std::env::var("ARCH_AUTH_LEGACY_PATH") {
+        return PathBuf::from(p);
+    }
     default_grok_home().join("auth.json")
 }
 

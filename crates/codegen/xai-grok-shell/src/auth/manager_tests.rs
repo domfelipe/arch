@@ -4362,3 +4362,63 @@ async fn manual_auth_emits_only_for_user_facing_source() {
         .await;
     assert!(api.manual_auth_last_token().is_none());
 }
+
+// -- Arch primary → legacy auth re-read on reload ----------------------------
+
+/// When the Arch primary file is missing, `force_reload` / `read_disk_auth`
+/// must still surface credentials from the legacy path (same as `AuthManager::new`).
+#[test]
+#[serial_test::serial(arch_auth_env)]
+fn force_reload_reads_legacy_when_primary_file_missing() {
+    use xai_grok_test_support::EnvGuard;
+
+    let root = tempfile::tempdir().unwrap();
+    let primary = root.path().join("arch-primary-auth.json");
+    let legacy = root.path().join("legacy-auth.json");
+    let _p = EnvGuard::set("ARCH_AUTH_PATH", &primary);
+    let _l = EnvGuard::set("ARCH_AUTH_LEGACY_PATH", &legacy);
+
+    let cfg = GrokComConfig::default();
+    let scope = cfg.auth_scope();
+    let legacy_auth = GrokAuth {
+        key: "legacy-reload-token".into(),
+        auth_mode: AuthMode::Oidc,
+        refresh_token: Some("legacy-rt".into()),
+        expires_at: Some(Utc::now() + Duration::hours(2)),
+        ..GrokAuth::test_default()
+    };
+    let mut store = AuthStore::new();
+    store.insert(scope.clone(), legacy_auth.clone());
+    write_auth_json(&legacy, &store).unwrap();
+    assert!(!primary.exists(), "primary must stay missing for this case");
+
+    // Construct against default_grok_home so path resolves via ARCH_AUTH_PATH.
+    let home = xai_grok_config::default_grok_home();
+    let mgr = Arc::new(AuthManager::new(&home, cfg));
+    // Construction may already have loaded legacy; clear memory to force reload path.
+    mgr.clear_in_memory();
+    assert!(mgr.current_or_expired().is_none());
+
+    let (disk, state) = mgr.read_disk_auth_with_state();
+    assert_eq!(
+        state,
+        DiskAuthState::Ok,
+        "primary FileMissing must re-read legacy"
+    );
+    assert_eq!(
+        disk.as_ref().map(|a| a.key.as_str()),
+        Some("legacy-reload-token")
+    );
+
+    mgr.force_reload_from_disk_with(RELOAD_RETRY_TRIES, StdDuration::ZERO);
+    let reloaded = mgr
+        .current_or_expired()
+        .expect("reload must adopt legacy token");
+    assert_eq!(reloaded.key, "legacy-reload-token");
+    assert_eq!(reloaded.refresh_token.as_deref(), Some("legacy-rt"));
+    // Writes still target primary only — reload must not create primary from a read.
+    assert!(
+        !primary.exists(),
+        "read/reload must not materialize primary auth.json"
+    );
+}

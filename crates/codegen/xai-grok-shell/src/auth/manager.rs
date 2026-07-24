@@ -33,7 +33,8 @@ use super::model::{
 };
 use super::refresh::{RefreshOutcome, TokenRefresher, resolve_refresh_credential};
 use super::storage::{
-    AuthFileLock, read_auth_json, read_auth_json_or_empty_recovering_corrupt, write_auth_json,
+    AuthFileLock, read_auth_json, read_auth_json_or_empty_recovering_corrupt,
+    read_auth_store_with_legacy_fallback, write_auth_json,
 };
 
 #[cfg(test)]
@@ -305,105 +306,64 @@ impl AuthManager {
         let path = xai_grok_config::resolve_auth_json_path(grok_home);
         let legacy_path = xai_grok_config::auth_json_legacy_path();
 
-        let (auth, auth_read_detail, initial_disk_state) = match read_auth_json(&path) {
-            Ok(map) => {
-                let found = lookup_auth(&map, &scope);
-                // If lookup_auth skipped a legacy WebLogin token, remove the
-                // stale scope entry from auth.json so it is not re-evaluated
-                // on every launch.
-                if found.is_none()
-                    && map
-                        .get(LEGACY_SCOPE)
-                        .is_some_and(|a| a.auth_mode == AuthMode::WebLogin)
-                {
-                    // Best-effort cleanup under advisory lock (consistent with
-                    // other auth.json writers). Non-blocking: if the lock is
-                    // held by a concurrent process, skip — retried next launch.
-                    if let Some(_lock) = lock::try_lock_auth_file_nonblocking(&path) {
-                        let mut cleaned = map.clone();
-                        cleaned.remove(LEGACY_SCOPE);
-                        let _ = write_auth_json(&path, &cleaned);
-                        tracing::debug!("auth: removed stale WebLogin scope from auth.json");
-                        // lock released on drop
+        let (auth, auth_read_detail, initial_disk_state) =
+            match read_auth_store_with_legacy_fallback(&path) {
+                Ok((map, src)) => {
+                    let found = lookup_auth(&map, &scope);
+                    // If lookup_auth skipped a legacy WebLogin token, remove the
+                    // stale scope entry from the **write** path (primary) so it
+                    // is not re-evaluated on every launch. Never rewrite legacy.
+                    if found.is_none()
+                        && src == path
+                        && map
+                            .get(LEGACY_SCOPE)
+                            .is_some_and(|a| a.auth_mode == AuthMode::WebLogin)
+                    {
+                        if let Some(_lock) = lock::try_lock_auth_file_nonblocking(&path) {
+                            let mut cleaned = map.clone();
+                            cleaned.remove(LEGACY_SCOPE);
+                            let _ = write_auth_json(&path, &cleaned);
+                            tracing::debug!("auth: removed stale WebLogin scope from auth.json");
+                        } else {
+                            tracing::debug!("auth: skipped WebLogin cleanup (lock unavailable)");
+                        }
+                    }
+                    let from_legacy = src != path;
+                    let detail = serde_json::json!({
+                        "read": if from_legacy { "ok_legacy" } else { "ok" },
+                        "resolved_path": path.display().to_string(),
+                        "source_path": src.display().to_string(),
+                        "legacy_path": legacy_path.display().to_string(),
+                        "scopes_on_disk": map.keys().collect::<Vec<_>>(),
+                        "target_scope": &scope,
+                        "found": found.is_some(),
+                        "auth_mode": found.as_ref().map(|a| format!("{:?}", a.auth_mode)),
+                        "is_expired": found.as_ref().map(is_expired),
+                        "key_prefix": found.as_ref().map(|a| token_suffix(&a.key).to_owned()),
+                    });
+                    let state = if found.is_some() {
+                        DiskAuthState::Ok
                     } else {
-                        tracing::debug!("auth: skipped WebLogin cleanup (lock unavailable)");
-                    }
+                        DiskAuthState::EntryMissing
+                    };
+                    (found, detail, state)
                 }
-                let detail = serde_json::json!({
-                    "read": "ok",
-                    "resolved_path": path.display().to_string(),
-                    "scopes_on_disk": map.keys().collect::<Vec<_>>(),
-                    "target_scope": &scope,
-                    "found": found.is_some(),
-                    "auth_mode": found.as_ref().map(|a| format!("{:?}", a.auth_mode)),
-                    "is_expired": found.as_ref().map(is_expired),
-                    "key_prefix": found.as_ref().map(|a| token_suffix(&a.key).to_owned()),
-                });
-                let state = if found.is_some() {
-                    DiskAuthState::Ok
-                } else {
-                    DiskAuthState::EntryMissing
-                };
-                (found, detail, state)
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound && path != legacy_path => {
-                // Arch primary missing: one-time **read** fallback from legacy
-                // `~/.grok/auth.json`. Writes still target `path` (Arch home),
-                // so successful Arch login never re-anchors secrets on grok.
-                match read_auth_json(&legacy_path) {
-                    Ok(map) => {
-                        let found = lookup_auth(&map, &scope);
-                        let detail = serde_json::json!({
-                            "read": "ok_legacy",
-                            "resolved_path": path.display().to_string(),
-                            "legacy_path": legacy_path.display().to_string(),
-                            "scopes_on_disk": map.keys().collect::<Vec<_>>(),
-                            "target_scope": &scope,
-                            "found": found.is_some(),
-                            "auth_mode": found.as_ref().map(|a| format!("{:?}", a.auth_mode)),
-                            "is_expired": found.as_ref().map(is_expired),
-                            "key_prefix": found.as_ref().map(|a| token_suffix(&a.key).to_owned()),
-                        });
-                        let state = if found.is_some() {
-                            DiskAuthState::Ok
-                        } else {
-                            DiskAuthState::EntryMissing
-                        };
-                        (found, detail, state)
-                    }
-                    Err(le) => {
-                        let detail = serde_json::json!({
-                            "read": "error",
-                            "error": e.to_string(),
-                            "legacy_error": le.to_string(),
-                            "path": path.display().to_string(),
-                            "legacy_path": legacy_path.display().to_string(),
-                            "path_exists": path.exists(),
-                        });
-                        let state = if le.kind() == std::io::ErrorKind::NotFound {
-                            DiskAuthState::FileMissing
-                        } else {
-                            DiskAuthState::Unreadable
-                        };
-                        (None, detail, state)
-                    }
+                Err(e) => {
+                    let detail = serde_json::json!({
+                        "read": "error",
+                        "error": e.to_string(),
+                        "path": path.display().to_string(),
+                        "legacy_path": legacy_path.display().to_string(),
+                        "path_exists": path.exists(),
+                    });
+                    let state = if e.kind() == std::io::ErrorKind::NotFound {
+                        DiskAuthState::FileMissing
+                    } else {
+                        DiskAuthState::Unreadable
+                    };
+                    (None, detail, state)
                 }
-            }
-            Err(e) => {
-                let detail = serde_json::json!({
-                    "read": "error",
-                    "error": e.to_string(),
-                    "path": path.display().to_string(),
-                    "path_exists": path.exists(),
-                });
-                let state = if e.kind() == std::io::ErrorKind::NotFound {
-                    DiskAuthState::FileMissing
-                } else {
-                    DiskAuthState::Unreadable
-                };
-                (None, detail, state)
-            }
-        };
+            };
         xai_grok_telemetry::unified_log::info(
             "AuthManager::new auth.json load result",
             None,
@@ -1128,10 +1088,12 @@ impl AuthManager {
     /// `disk_state` write, no transition telemetry). For side-effect-free
     /// getters like [`Self::attempted_verdict_key`]; prefer [`Self::read_disk_auth`]
     /// when the read should drive transition logging.
+    ///
+    /// Same primary→legacy read fallback as [`Self::read_disk_auth_with_state`].
     fn read_disk_auth_silent(&self) -> Option<GrokAuth> {
-        read_auth_json(&self.path)
+        read_auth_store_with_legacy_fallback(&self.path)
             .ok()
-            .and_then(|map| lookup_auth(&map, &self.scope))
+            .and_then(|(map, _)| lookup_auth(&map, &self.scope))
     }
 
     /// Wire-valid token present in on-disk `auth.json`, judged by actual expiry
@@ -1156,9 +1118,13 @@ impl AuthManager {
     /// can tell a transient disk anomaly (`FileMissing`/`Unreadable`) apart from
     /// a genuine logout (`EntryMissing`). Observes the state for transition
     /// logging, exactly like `read_disk_auth`.
+    ///
+    /// When the Arch primary path is missing, re-reads legacy `~/.grok/auth.json`
+    /// (same policy as [`Self::new`]) so `force_reload_from_disk` still finds
+    /// credentials until they are written to the primary path.
     pub(crate) fn read_disk_auth_with_state(&self) -> (Option<GrokAuth>, DiskAuthState) {
-        let (auth, state, err_detail) = match read_auth_json(&self.path) {
-            Ok(map) => {
+        let (auth, state, err_detail) = match read_auth_store_with_legacy_fallback(&self.path) {
+            Ok((map, _src)) => {
                 let found = lookup_auth(&map, &self.scope);
                 let state = if found.is_some() {
                     DiskAuthState::Ok

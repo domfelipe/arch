@@ -350,13 +350,73 @@ fn restore_prior_bytes(auth_file: &Path, bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Primary auth.json path for this home (Arch-remapped on product default home).
+pub fn auth_path_for_home(grok_home: &Path) -> PathBuf {
+    xai_grok_config::resolve_auth_json_path(grok_home)
+}
+
+/// Whether `primary` is the Arch product write target (so missing primary may
+/// fall back to legacy `~/.grok/auth.json`). Custom homes (tests / `GROK_HOME`)
+/// stay isolated — no ambient real-user legacy reads.
+fn primary_allows_legacy_fallback(primary: &Path) -> bool {
+    let legacy = xai_grok_config::auth_json_legacy_path();
+    if primary == legacy.as_path() {
+        return false;
+    }
+    let product = xai_grok_config::auth_json_primary_path();
+    primary == product.as_path()
+}
+
+/// Read auth store from primary path; if the **product** primary file is
+/// missing, try the legacy `~/.grok/auth.json` for **read** only. The returned
+/// `PathBuf` is the path that supplied the data (for diagnostics); writers must
+/// still use [`auth_path_for_home`].
+pub fn read_auth_store_with_legacy_fallback(
+    primary: &Path,
+) -> std::io::Result<(AuthStore, std::path::PathBuf)> {
+    match read_auth_json(primary) {
+        Ok(store) => Ok((store, primary.to_path_buf())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if !primary_allows_legacy_fallback(primary) {
+                return Err(e);
+            }
+            let legacy = xai_grok_config::auth_json_legacy_path();
+            match read_auth_json(&legacy) {
+                Ok(store) => Ok((store, legacy)),
+                Err(e2) => Err(e2),
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Like [`read_auth_store_with_legacy_fallback`] but recovers corrupt primary
+/// files; legacy is only used when product primary is missing (NotFound).
+fn read_auth_store_for_write(primary: &Path) -> std::io::Result<AuthStore> {
+    match read_auth_json_or_empty_recovering_corrupt(primary) {
+        Ok(store) if !store.is_empty() || primary.exists() => Ok(store),
+        Ok(_empty) => {
+            // Product primary missing/empty: seed from legacy if present so
+            // store/clear operate on a full map, then write only to primary.
+            if primary_allows_legacy_fallback(primary) {
+                let legacy = xai_grok_config::auth_json_legacy_path();
+                if let Ok(legacy_store) = read_auth_json(&legacy) {
+                    return Ok(legacy_store);
+                }
+            }
+            Ok(AuthStore::new())
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// Read a single auth token from `auth.json` by scope key.
 /// Falls back to the legacy `https://accounts.x.ai/sign-in` scope key
 /// when the requested scope is not found (devbox auth.json migration).
 pub fn read_token_by_scope(grok_home: &Path, scope: &str) -> anyhow::Result<String> {
-    let path = grok_home.join("auth.json");
-    let store =
-        read_auth_json(&path).map_err(|_| anyhow::anyhow!("Not logged in. Run `grok login`."))?;
+    let path = auth_path_for_home(grok_home);
+    let (store, _) = read_auth_store_with_legacy_fallback(&path)
+        .map_err(|_| anyhow::anyhow!("Not logged in. Run `grok login`."))?;
     lookup_auth(&store, scope).map(|a| a.key).ok_or_else(|| {
         anyhow::anyhow!("Your auth token is invalid. Run `grok login` to re-authenticate.")
     })
@@ -364,18 +424,19 @@ pub fn read_token_by_scope(grok_home: &Path, scope: &str) -> anyhow::Result<Stri
 
 /// Read the API key from the `xai::api_key` scope in auth.json.
 pub fn read_api_key(grok_home: &Path) -> Option<String> {
-    let path = grok_home.join("auth.json");
-    let map = read_auth_json(&path).ok()?;
+    let path = auth_path_for_home(grok_home);
+    let (map, _) = read_auth_store_with_legacy_fallback(&path).ok()?;
     map.get(API_KEY_SCOPE).map(|a| a.key.clone())
 }
 
 /// Store a plain API key in auth.json under the `xai::api_key` scope.
 ///
-/// Uses the corrupt-recovery reader so a malformed auth.json (e.g. from a
-/// previous crash) can be healed when the user sets an API key.
+/// Writes **only** to the Arch primary path (never creates new secrets under
+/// `~/.grok`). Uses the corrupt-recovery reader so a malformed primary file
+/// can be healed; may seed the map from legacy for merge before writing primary.
 pub fn store_api_key(grok_home: &Path, api_key: &str) -> std::io::Result<()> {
-    let path = grok_home.join("auth.json");
-    let mut map = read_auth_json_or_empty_recovering_corrupt(&path)?;
+    let path = auth_path_for_home(grok_home);
+    let mut map = read_auth_store_for_write(&path)?;
     map.insert(
         API_KEY_SCOPE.to_owned(),
         GrokAuth {
@@ -387,16 +448,15 @@ pub fn store_api_key(grok_home: &Path, api_key: &str) -> std::io::Result<()> {
     write_auth_json(&path, &map)
 }
 
-/// Remove the `xai::api_key` scope from auth.json.
+/// Remove the `xai::api_key` scope from auth.json (primary Arch path only).
 pub fn clear_api_key(grok_home: &Path) -> std::io::Result<()> {
-    let path = grok_home.join("auth.json");
-    if let Ok(mut map) = read_auth_json(&path) {
-        map.remove(API_KEY_SCOPE);
-        if map.is_empty() {
-            let _ = std::fs::remove_file(&path);
-        } else {
-            write_auth_json(&path, &map)?;
-        }
+    let path = auth_path_for_home(grok_home);
+    let mut map = read_auth_store_for_write(&path)?;
+    map.remove(API_KEY_SCOPE);
+    if map.is_empty() {
+        let _ = std::fs::remove_file(&path);
+    } else {
+        write_auth_json(&path, &map)?;
     }
     Ok(())
 }
@@ -574,5 +634,121 @@ mod write_fallback_tests {
         let _ = write_auth_json_in_place_with(&path, &sample_store(), fake_truncate_then_fail);
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "restored file must stay 0o600");
+    }
+}
+
+/// Arch auth migration: primary path remap, store never re-anchors to ~/.grok,
+/// legacy read when primary missing.
+#[cfg(test)]
+mod arch_auth_path_tests {
+    use super::*;
+    use xai_grok_config::{auth_json_primary_path, default_grok_home, resolve_auth_json_path};
+    use xai_grok_test_support::EnvGuard;
+
+    #[test]
+    fn resolve_auth_json_path_remaps_default_grok_home_to_arch() {
+        if std::env::var_os("ARCH_AUTH_PATH").is_some()
+            || std::env::var_os("GROK_AUTH_PATH").is_some()
+        {
+            return; // explicit override — remap shape is not meaningful
+        }
+        let home = default_grok_home();
+        let resolved = resolve_auth_json_path(&home);
+        assert_eq!(resolved, auth_path_for_home(&home));
+        assert_eq!(resolved, auth_json_primary_path());
+        assert_ne!(
+            resolved,
+            home.join("auth.json"),
+            "default grok home must remap off ~/.grok/auth.json"
+        );
+        assert!(
+            resolved.to_string_lossy().contains(".arch")
+                || std::env::var_os("ARCH_HOME").is_some(),
+            "primary should live under Arch product home: {resolved:?}"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial(arch_auth_env)]
+    fn store_api_key_writes_primary_not_nested_grok() {
+        // Isolate from product primary/legacy env overrides used by sibling tests.
+        let _no_primary = EnvGuard::unset("ARCH_AUTH_PATH");
+        let _no_legacy = EnvGuard::unset("ARCH_AUTH_LEGACY_PATH");
+        let _no_grok = EnvGuard::unset("GROK_AUTH_PATH");
+
+        let home = tempfile::tempdir().unwrap();
+        store_api_key(home.path(), "arch-primary-key").unwrap();
+        let primary = auth_path_for_home(home.path());
+        assert_eq!(primary, home.path().join("auth.json"));
+        assert!(primary.exists(), "key must land on resolved primary path");
+        assert_eq!(
+            read_api_key(home.path()).as_deref(),
+            Some("arch-primary-key")
+        );
+        assert!(
+            !home.path().join(".grok").exists(),
+            "store_api_key must not create a nested .grok under custom home"
+        );
+        clear_api_key(home.path()).unwrap();
+        assert!(
+            !primary.exists() || read_api_key(home.path()).is_none(),
+            "clear_api_key removes the api key from primary only"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial(arch_auth_env)]
+    fn store_api_key_under_remapped_home_uses_arch_auth_path_override() {
+        let root = tempfile::tempdir().unwrap();
+        let primary = root.path().join("arch-primary-auth.json");
+        let legacy = root.path().join("legacy-grok-auth.json");
+        let _p = EnvGuard::set("ARCH_AUTH_PATH", &primary);
+        let _l = EnvGuard::set("ARCH_AUTH_LEGACY_PATH", &legacy);
+
+        let default_home = default_grok_home();
+        assert_eq!(auth_path_for_home(&default_home), primary);
+        store_api_key(&default_home, "only-on-primary").unwrap();
+        assert!(primary.exists());
+        assert!(
+            !legacy.exists(),
+            "writes must never create legacy ~/.grok auth"
+        );
+        assert_eq!(
+            read_api_key(&default_home).as_deref(),
+            Some("only-on-primary")
+        );
+    }
+
+    #[test]
+    #[serial_test::serial(arch_auth_env)]
+    fn read_api_key_falls_back_to_legacy_when_primary_missing() {
+        let root = tempfile::tempdir().unwrap();
+        let primary = root.path().join("missing-primary.json");
+        let legacy = root.path().join("legacy.json");
+        let _p = EnvGuard::set("ARCH_AUTH_PATH", &primary);
+        let _l = EnvGuard::set("ARCH_AUTH_LEGACY_PATH", &legacy);
+
+        let mut map = AuthStore::new();
+        map.insert(
+            API_KEY_SCOPE.to_owned(),
+            GrokAuth {
+                key: "legacy-only-key".into(),
+                auth_mode: AuthMode::ApiKey,
+                ..Default::default()
+            },
+        );
+        write_auth_json(&legacy, &map).unwrap();
+        assert!(!primary.exists());
+
+        let (store, src) = read_auth_store_with_legacy_fallback(&primary).unwrap();
+        assert_eq!(src, legacy);
+        assert_eq!(
+            store.get(API_KEY_SCOPE).map(|a| a.key.as_str()),
+            Some("legacy-only-key")
+        );
+        assert_eq!(
+            read_api_key(&default_grok_home()).as_deref(),
+            Some("legacy-only-key")
+        );
     }
 }
