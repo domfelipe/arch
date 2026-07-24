@@ -593,6 +593,9 @@ pub struct AppView {
     pub auth_return_view: Option<ActiveView>,
     /// Per-agent views (keyed by AgentId).
     pub agents: IndexMap<AgentId, AgentView>,
+    /// Secondary agent shown beside the active one in Arch split view.
+    /// When `Some` and the id still exists, the agent draw path paints two panes.
+    pub split_secondary: Option<AgentId>,
     /// Monotonically increasing counter for agent ID allocation.
     /// Never reuse IDs after `shift_remove` to avoid collisions.
     pub next_agent_id: usize,
@@ -1234,6 +1237,7 @@ impl AppView {
             active_view: ActiveView::Welcome,
             auth_return_view: None,
             agents: IndexMap::new(),
+            split_secondary: None,
             next_agent_id: 0,
             models,
             registry: ActionRegistry::defaults(),
@@ -2691,6 +2695,9 @@ impl AppView {
                 label: None,
                 git_ref: None,
             },
+            ActionId::NextAgentTab => Action::NextAgentTab,
+            ActionId::PrevAgentTab => Action::PrevAgentTab,
+            ActionId::ToggleSplitView => Action::ToggleSplitView,
             ActionId::OpenDashboard => Action::OpenDashboard,
             ActionId::VoiceToggle => Action::VoiceToggle,
             _ => return InputOutcome::Unchanged,
@@ -4142,7 +4149,7 @@ impl AppView {
                             } else {
                                 None
                             };
-                        let (agent_area, header) = if overlay_active {
+                        let (mut agent_area, header) = if overlay_active {
                             let theme = crate::theme::Theme::current();
                             let title = agents
                                 .get(&id)
@@ -4179,6 +4186,25 @@ impl AppView {
                         } else {
                             (view_area, None)
                         };
+                        // Arch multi-task tab strip (when more than one agent is open).
+                        if agents.len() > 1 && agent_area.height > 1 {
+                            let theme = crate::theme::Theme::current();
+                            crate::views::arch_tabs::render_tab_strip(
+                                f.buffer_mut(),
+                                agent_area,
+                                agents,
+                                id,
+                                &theme,
+                            );
+                            agent_area.y = agent_area.y.saturating_add(1);
+                            agent_area.height = agent_area.height.saturating_sub(1);
+                        }
+                        // Drop stale split peer.
+                        if let Some(peer) = self.split_secondary
+                            && !agents.contains_key(&peer)
+                        {
+                            self.split_secondary = None;
+                        }
                         if let Some(d) = self.dashboard.as_mut() {
                             d.overlay_close_hit.set(header.and_then(|c| c.close_rect));
                             d.overlay_prev_hit.set(header.and_then(|c| c.prev_rect));
@@ -4189,6 +4215,67 @@ impl AppView {
                         {
                             d.restore_peek_viewport(agents);
                         }
+                        // Arch split: paint secondary peer first (right), then active (left).
+                        let split_peer = self
+                            .split_secondary
+                            .filter(|p| *p != id && agents.contains_key(p));
+                        let (primary_area, peer_area) = if let Some(peer_id) = split_peer {
+                            if agent_area.width >= 40 {
+                                let mid = agent_area.width / 2;
+                                let left = ratatui::layout::Rect {
+                                    x: agent_area.x,
+                                    y: agent_area.y,
+                                    width: mid.saturating_sub(1).max(1),
+                                    height: agent_area.height,
+                                };
+                                let right = ratatui::layout::Rect {
+                                    x: agent_area.x + mid,
+                                    y: agent_area.y,
+                                    width: agent_area.width.saturating_sub(mid).max(1),
+                                    height: agent_area.height,
+                                };
+                                // Separator column.
+                                let theme = crate::theme::Theme::current();
+                                for y in agent_area.y..agent_area.y.saturating_add(agent_area.height)
+                                {
+                                    if let Some(cell) =
+                                        f.buffer_mut().cell_mut((agent_area.x + mid - 1, y))
+                                    {
+                                        cell.set_symbol("│");
+                                        cell.set_style(
+                                            ratatui::style::Style::default().fg(theme.gray),
+                                        );
+                                    }
+                                }
+                                // Draw inactive peer on the right (no input focus).
+                                if let Some(peer) = agents.get_mut(&peer_id) {
+                                    let _ = peer.draw(
+                                        right,
+                                        f.buffer_mut(),
+                                        registry,
+                                        scratch,
+                                        None,
+                                        false,
+                                        0,
+                                        &self.active_announcements,
+                                        &self.hidden_announcement_ids,
+                                        None,
+                                        &self.bundle_state,
+                                        false,
+                                        &mut Vec::new(),
+                                        voice_available,
+                                        false,
+                                        None,
+                                    );
+                                }
+                                (left, Some(right))
+                            } else {
+                                (agent_area, None)
+                            }
+                        } else {
+                            (agent_area, None)
+                        };
+                        let _ = peer_area;
                         if let Some(agent) = agents.get_mut(&id) {
                             let announcement_banner_h =
                                 crate::views::announcements::session_banner_height(
@@ -4207,7 +4294,7 @@ impl AppView {
                                 0
                             };
                             let result = agent.draw(
-                                agent_area,
+                                primary_area,
                                 f.buffer_mut(),
                                 registry,
                                 scratch,
@@ -5229,6 +5316,7 @@ pub(crate) mod tests {
             active_view: ActiveView::Welcome,
             auth_return_view: None,
             agents: indexmap::IndexMap::new(),
+            split_secondary: None,
             next_agent_id: 0,
             models: ModelState::default(),
             registry: ActionRegistry::defaults(),

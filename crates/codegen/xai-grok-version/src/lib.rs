@@ -4,7 +4,7 @@ use semver::Version;
 
 pub const ARCH_PRODUCT_NAME: &str = "Arch";
 pub const ARCH_CLI_NAME: &str = "archcode";
-pub const ARCH_VERSION: &str = "0.0.2-preview";
+pub const ARCH_VERSION: &str = "0.0.3-preview";
 
 pub const TEST_VERSION_ENV: &str = "GROK_TEST_VERSION";
 

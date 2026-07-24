@@ -192,6 +192,12 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
         }
         Action::NewSession => dispatch_new_session(app),
         Action::ChooseNewSessionMode => open_new_session_question(app),
+        Action::NextAgentTab => super::arch_tabs::dispatch_next_agent_tab(app),
+        Action::PrevAgentTab => super::arch_tabs::dispatch_prev_agent_tab(app),
+        Action::ToggleSplitView => super::arch_tabs::dispatch_toggle_split(app),
+        Action::Handoff { target, brief } => {
+            super::arch_tabs::dispatch_handoff(app, &target, brief.as_deref())
+        }
         Action::ExitSession | Action::ExitSessionConfirmed => dispatch_exit_session(app),
         Action::NewWorktreeSession {
             load_session_id,

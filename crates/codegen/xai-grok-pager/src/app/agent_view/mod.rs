@@ -1372,6 +1372,11 @@ pub struct AgentView {
     /// best-effort (failure surfaces a toast through the existing
     /// `RenameSessionFailed` arm).
     pub display_name: Option<String>,
+    /// Arch soul label for this tab (`developer`, `qa`, …). Drives tab chrome
+    /// and handoff metadata; independent of the shell agent profile when unset.
+    pub arch_soul: Option<String>,
+    /// Related Arch task tab (e.g. handoff source/target).
+    pub arch_related_to: Option<super::agent::AgentId>,
     /// Short title from shell `SessionSummaryGenerated` or `summary.json` on load/resume.
     /// Precedence in the dashboard title is below `display_name`, above first-prompt text.
     pub generated_session_title: Option<String>,
@@ -2000,6 +2005,9 @@ fn resolve_action(action_id: Option<ActionId>) -> Option<InputOutcome> {
         | ActionId::ExitSession
         | ActionId::NewSession
         | ActionId::NewSessionInWorktree
+        | ActionId::NextAgentTab
+        | ActionId::PrevAgentTab
+        | ActionId::ToggleSplitView
         | ActionId::CommandPalette
         | ActionId::ModelPicker => return None,
         ActionId::DumpInputLog => return None,

@@ -277,6 +277,8 @@ impl AgentView {
             loading_placeholder_id: None,
             pending_recap_entry: None,
             display_name: None,
+            arch_soul: None,
+            arch_related_to: None,
             generated_session_title: None,
             pending_effects: Vec::new(),
             paste_probe_in_flight: 0,

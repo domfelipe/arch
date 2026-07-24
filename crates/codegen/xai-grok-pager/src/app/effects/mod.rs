@@ -128,6 +128,7 @@ pub(crate) fn execute(
             model_id,
             preferred_session_id,
             chat_kind,
+            agent_profile,
         } => {
             let tx = acp_tx.clone();
             let compat = xai_grok_tools::types::compat::CompatConfig::default();
@@ -149,6 +150,13 @@ pub(crate) fn execute(
             if let Some(ref sid) = preferred_session_id {
                 meta.get_or_insert_with(acp::Meta::new)
                     .insert("sessionId".into(), serde_json::json!(sid));
+            }
+            // Arch per-tab soul override (handoff / explicit profile).
+            if let Some(ref profile) = agent_profile
+                && !is_chat_path
+            {
+                meta.get_or_insert_with(acp::Meta::new)
+                    .insert("agentProfile".into(), serde_json::json!(profile));
             }
             if is_chat_path {
                 scrub_chat_workspace_bind_meta(&mut meta);

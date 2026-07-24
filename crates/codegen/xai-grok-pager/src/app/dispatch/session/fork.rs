@@ -365,6 +365,7 @@ pub(in crate::app::dispatch) fn dispatch_project_selected(
         model_id: None,
         preferred_session_id,
         chat_kind,
+        agent_profile: None,
     });
     effects.extend(dispatch_send_prompt(app, stashed_prompt));
     effects

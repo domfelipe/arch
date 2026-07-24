@@ -374,6 +374,7 @@ pub(in crate::app::dispatch) fn dispatch_new_session_inner_with_id(
             model_id,
             preferred_session_id,
             chat_kind,
+            agent_profile: None,
         });
     }
     (agent_id, effects)
@@ -790,10 +791,7 @@ pub(in crate::app::dispatch) fn skip_picker_and_create_session(
         model_id: None,
         preferred_session_id,
         chat_kind,
-        
-        
-        
-        
+        agent_profile: None,
     }]
 }
 pub(in crate::app::dispatch) fn handle_session_created(

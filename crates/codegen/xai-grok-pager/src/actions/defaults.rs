@@ -719,16 +719,63 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
         ActionDef {
             id: ActionId::NewSession,
             label: "new",
-            description: "New session",
-            default_key: key!('n', CONTROL),
+            description: "New task tab",
+            // Arch: Ctrl+T opens a parallel task tab (agent). Ctrl+N remains as alias.
+            default_key: key!('t', CONTROL),
+            alt_keys: vec![key!('n', CONTROL)],
+            category: Category::Session,
+            context: When::Always,
+            hint_priority: None,
+            hint_key_display: None,
+            // Parallel tabs do not discard the current conversation.
+            requires_confirmation: false,
+            long_help: Some(
+                "Opens a new Arch task tab with its own agent and empty context.\n\
+                 Existing tabs keep running. Cycle tabs with Ctrl+Tab / Ctrl+Shift+Tab.\n\
+                 Alias: Ctrl+N. Slash: /new",
+            ),
+        },
+        ActionDef {
+            id: ActionId::NextAgentTab,
+            label: "next-tab",
+            description: "Next task tab",
+            default_key: key!(Tab, CONTROL),
+            alt_keys: vec![],
+            category: Category::Session,
+            // Always so app-level `lookup(When::Always)` picks it up.
+            context: When::Always,
+            hint_priority: None,
+            hint_key_display: None,
+            requires_confirmation: false,
+            long_help: Some("Focus the next open Arch task tab."),
+        },
+        ActionDef {
+            id: ActionId::PrevAgentTab,
+            label: "prev-tab",
+            description: "Previous task tab",
+            default_key: key!(BackTab, CONTROL),
+            alt_keys: vec![key!(Tab, CONTROL | SHIFT)],
+            category: Category::Session,
+            context: When::Always,
+            hint_priority: None,
+            hint_key_display: None,
+            requires_confirmation: false,
+            long_help: Some("Focus the previous open Arch task tab."),
+        },
+        ActionDef {
+            id: ActionId::ToggleSplitView,
+            label: "split",
+            description: "Toggle split view",
+            default_key: key!('s', CONTROL | SHIFT),
             alt_keys: vec![],
             category: Category::Session,
             context: When::Always,
             hint_priority: None,
             hint_key_display: None,
-            requires_confirmation: true,
+            requires_confirmation: false,
             long_help: Some(
-                "Starts a fresh session with empty scrollback and context.\nRequires confirmation: press it twice (the first press arms, the second starts)\nso you don't discard the current conversation by accident.",
+                "Show the active task side-by-side with another open task (max two).\n\
+                 Toggle again to return to single-pane. Slash: /split",
             ),
         },
         ActionDef {

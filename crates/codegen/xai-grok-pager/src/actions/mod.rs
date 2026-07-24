@@ -104,6 +104,12 @@ pub enum ActionId {
     NewSession,
     NewSessionInWorktree,
     ExitSession,
+    /// Focus the next Arch task tab (parallel agent).
+    NextAgentTab,
+    /// Focus the previous Arch task tab (parallel agent).
+    PrevAgentTab,
+    /// Toggle split view of the active task and another task (max 2).
+    ToggleSplitView,
     CommandPalette,
     ModelPicker,
     ShortcutsHelp,

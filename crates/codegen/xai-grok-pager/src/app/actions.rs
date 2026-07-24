@@ -52,6 +52,19 @@ pub enum Action {
     NewSession,
     /// Ask whether the new session should use a git worktree.
     ChooseNewSessionMode,
+    /// Focus the next open Arch task tab.
+    NextAgentTab,
+    /// Focus the previous open Arch task tab.
+    PrevAgentTab,
+    /// Toggle side-by-side split of two task tabs.
+    ToggleSplitView,
+    /// Hand off work to another Arch agent soul (`developer` / `qa`).
+    Handoff {
+        /// Target soul / agent profile name (e.g. `qa`, `developer`).
+        target: String,
+        /// Optional free-form brief; when empty, a summary is derived.
+        brief: Option<String>,
+    },
     /// Exit the current session and return to the welcome screen.
     ExitSession,
     /// Exit session without double-press confirmation (e.g., from command palette).
@@ -1340,6 +1353,9 @@ pub enum Effect {
         /// or CLI `--chat` via `SessionFlags.chat_mode`). Does not sticky-set
         /// process-wide mode.
         chat_kind: bool,
+        /// Arch soul / built-in agent profile override for this session only
+        /// (`developer`, `qa`, …). Stamped into `_meta.agentProfile` when set.
+        agent_profile: Option<String>,
     },
     /// Change the process working directory (project-picker selection).
     SetWorkingDir { path: std::path::PathBuf },

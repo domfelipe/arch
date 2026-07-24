@@ -4453,6 +4453,9 @@ fn dashboard_action_for_id(
         | ActionId::NewSession
         | ActionId::ExitSession
         | ActionId::NewSessionInWorktree
+        | ActionId::NextAgentTab
+        | ActionId::PrevAgentTab
+        | ActionId::ToggleSplitView
         | ActionId::CommandPalette
         | ActionId::ModelPicker
         | ActionId::ShortcutsHelp
