@@ -388,8 +388,10 @@ impl SubagentsConfig {
     /// Each file defines a single `SubagentPersona`. The file stem becomes
     /// the persona name. Inline config takes precedence.
     pub fn discover_personas(&mut self, cwd: &std::path::Path) {
-        let dir = cwd.join(".grok").join("personas");
-        self.discover_personas_in_dir(&dir);
+        // Arch-native first, then Grok compat.
+        self.discover_personas_in_dir(&cwd.join(".arch").join("personas"));
+        self.discover_personas_in_dir(&cwd.join(".arch").join("souls"));
+        self.discover_personas_in_dir(&cwd.join(".grok").join("personas"));
     }
     /// Validate all role definitions. Returns a list of (role_name, error_message)
     /// for invalid entries.
@@ -431,8 +433,8 @@ impl SubagentsConfig {
     ///
     /// Precedence: inline config roles override file-based roles with the same name.
     pub fn discover_roles(&mut self, cwd: &std::path::Path) {
-        let roles_dir = cwd.join(".grok").join("roles");
-        self.discover_roles_in_dir(&roles_dir);
+        self.discover_roles_in_dir(&cwd.join(".arch").join("roles"));
+        self.discover_roles_in_dir(&cwd.join(".grok").join("roles"));
     }
     /// Resolve the final subagents config from all sources (in priority order):
     /// 1. CLI flag `--subagents` (absolute highest — always enables)
@@ -474,6 +476,11 @@ impl SubagentsConfig {
             true,
         );
         result.enabled = resolved.value;
+        if let Some(arch_root) = xai_grok_config::user_arch_home() {
+            result.discover_roles_in_dir(&arch_root.join("roles"));
+            result.discover_personas_in_dir(&arch_root.join("personas"));
+            result.discover_personas_in_dir(&arch_root.join("souls"));
+        }
         if let Some(root) = user_grok_root {
             result.discover_roles_in_dir(&root.join("roles"));
             result.discover_personas_in_dir(&root.join("personas"));

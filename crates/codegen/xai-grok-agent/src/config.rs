@@ -647,7 +647,7 @@ where
 /// are defined in exactly one place. The enum covers all built-in
 /// agents for centralized name management and `by_name()` dispatch.
 ///
-/// `subagent_variants()` returns only the 3 that are exposed to the LLM
+/// `subagent_variants()` returns the set exposed to the LLM
 /// via the `TaskTool` description. The remaining 6 are top-level agent
 /// profiles resolvable by name but not advertised as subagent types.
 #[derive(
@@ -665,6 +665,10 @@ pub enum BuiltinAgentName {
     GeneralPurpose,
     Explore,
     Plan,
+    /// Arch implementation agent (soul: Developer).
+    Developer,
+    /// Arch quality / review agent (soul: QA).
+    Qa,
     BrowserUse,
     #[strum(serialize = "grok-build-orchestrator")]
     GrokBuildOrchestrator,
@@ -694,13 +698,21 @@ impl BuiltinAgentName {
             Self::GeneralPurpose => AgentDefinition::general_purpose(),
             Self::Explore => AgentDefinition::explore(),
             Self::Plan => AgentDefinition::plan(),
+            Self::Developer => AgentDefinition::developer(),
+            Self::Qa => AgentDefinition::qa(),
             Self::BrowserUse => AgentDefinition::browser_use(),
             Self::GrokBuildOrchestrator => AgentDefinition::grok_build_orchestrator(),
         }
     }
     /// Built-in agents available as subagents via the Task tool.
     pub fn subagent_variants() -> &'static [Self] {
-        &[Self::GeneralPurpose, Self::Explore, Self::Plan]
+        &[
+            Self::GeneralPurpose,
+            Self::Explore,
+            Self::Plan,
+            Self::Developer,
+            Self::Qa,
+        ]
     }
 }
 /// Portable agent identity — parsed from .grok/agents/*.md.
@@ -1068,11 +1080,11 @@ const _: () = assert!(AgentColor::VALID_VALUES.len() == <AgentColor as strum::En
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum MemoryScope {
-    /// `~/.grok/agent-memory/<name>/`
+    /// `~/.arch/agent-memory/<name>/` (Arch-native; migrates off `~/.grok`).
     User,
-    /// `<project>/.grok/agent-memory/<name>/`
+    /// `<project>/.arch/agent-memory/<name>/`
     Project,
-    /// `<project>/.grok/agent-memory-local/<name>/`
+    /// `<project>/.arch/agent-memory-local/<name>/`
     Local,
 }
 impl MemoryScope {
@@ -1089,18 +1101,18 @@ impl MemoryScope {
     pub fn resolve_dir(self, agent_name: &str, project_cwd: &std::path::Path) -> ResolvedMemoryDir {
         match self {
             Self::User => ResolvedMemoryDir {
-                path: xai_grok_config::grok_home()
+                path: xai_grok_config::arch_home()
                     .join("agent-memory")
                     .join(agent_name),
                 is_project_scoped: false,
             },
             Self::Project => ResolvedMemoryDir {
-                path: project_cwd.join(".grok/agent-memory").join(agent_name),
+                path: project_cwd.join(".arch/agent-memory").join(agent_name),
                 is_project_scoped: true,
             },
             Self::Local => ResolvedMemoryDir {
                 path: project_cwd
-                    .join(".grok/agent-memory-local")
+                    .join(".arch/agent-memory-local")
                     .join(agent_name),
                 is_project_scoped: true,
             },
@@ -1556,6 +1568,29 @@ impl AgentDefinition {
             ..Self::base(BuiltinAgentName::Plan, "")
         }
     }
+    /// Arch **Developer** soul — implementation agent with full tool access.
+    pub fn developer() -> Self {
+        use crate::prompt::subagent_prompts;
+        Self {
+            description: xai_tool_types::DEVELOPER_SUBAGENT.description.to_string(),
+            prompt_body: Some(subagent_prompts::DEVELOPER_PROMPT.to_string()),
+            memory: Some(MemoryScope::User),
+            ..Self::base(BuiltinAgentName::Developer, "")
+        }
+    }
+    /// Arch **QA** soul — review/verify agent (execute + read, edit only if needed).
+    pub fn qa() -> Self {
+        use crate::prompt::subagent_prompts;
+        Self {
+            description: xai_tool_types::QA_SUBAGENT.description.to_string(),
+            tool_config: plan_toolset(),
+            permission_mode: PermissionMode::Default,
+            prompt_body: Some(subagent_prompts::QA_PROMPT.to_string()),
+            inherit_skills: false,
+            memory: Some(MemoryScope::User),
+            ..Self::base(BuiltinAgentName::Qa, "")
+        }
+    }
     /// Browser Use agent definition.
     pub fn browser_use() -> Self {
         Self {
@@ -1779,6 +1814,8 @@ mod tests {
             | BuiltinAgentName::GeneralPurpose
             | BuiltinAgentName::Explore
             | BuiltinAgentName::Plan
+            | BuiltinAgentName::Developer
+            | BuiltinAgentName::Qa
             | BuiltinAgentName::Opencode
             | BuiltinAgentName::BrowserUse => false,
         }
@@ -2043,13 +2080,13 @@ description: Minimal agent
         let proj = MemoryScope::Project.resolve_dir("a", cwd);
         assert_eq!(
             proj.path,
-            std::path::PathBuf::from("/project/.grok/agent-memory/a")
+            std::path::PathBuf::from("/project/.arch/agent-memory/a")
         );
         assert!(proj.is_project_scoped);
         let local = MemoryScope::Local.resolve_dir("a", cwd);
         assert_eq!(
             local.path,
-            std::path::PathBuf::from("/project/.grok/agent-memory-local/a")
+            std::path::PathBuf::from("/project/.arch/agent-memory-local/a")
         );
         assert!(local.is_project_scoped);
     }
@@ -2424,6 +2461,8 @@ description: Test default tool config
             ("general-purpose", BuiltinAgentName::GeneralPurpose),
             ("explore", BuiltinAgentName::Explore),
             ("plan", BuiltinAgentName::Plan),
+            ("developer", BuiltinAgentName::Developer),
+            ("qa", BuiltinAgentName::Qa),
             ("browser-use", BuiltinAgentName::BrowserUse),
         ] {
             let parsed = BuiltinAgentName::from_str(s).unwrap();
@@ -2453,10 +2492,12 @@ description: Test default tool config
     #[test]
     fn test_builtin_agent_name_subagent_variants() {
         let variants = BuiltinAgentName::subagent_variants();
-        assert_eq!(variants.len(), 3);
+        assert_eq!(variants.len(), 5);
         assert!(variants.contains(&BuiltinAgentName::GeneralPurpose));
         assert!(variants.contains(&BuiltinAgentName::Explore));
         assert!(variants.contains(&BuiltinAgentName::Plan));
+        assert!(variants.contains(&BuiltinAgentName::Developer));
+        assert!(variants.contains(&BuiltinAgentName::Qa));
     }
     #[test]
     fn test_all_builtins_have_inherit_model() {

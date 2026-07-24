@@ -21,9 +21,10 @@ pub struct TaskToolInput {
     pub description: String,
 
     /// Name of the subagent type to launch. Built-in types: "general-purpose",
-    /// "explore", "plan". Additional user-defined types may also be available.
+    /// "explore", "plan", "developer", "qa". Additional user-defined types may
+    /// also be available.
     #[schemars(
-        description = "Name of the subagent type to launch. Built-in types: \"general-purpose\", \"explore\", \"plan\". Additional user-defined types may also be available."
+        description = "Name of the subagent type to launch. Built-in types: \"general-purpose\", \"explore\", \"plan\", \"developer\", \"qa\". Additional user-defined types may also be available."
     )]
     #[serde(default = "default_subagent_type")]
     pub subagent_type: String,
@@ -803,9 +804,84 @@ pub const PLAN_SUBAGENT: BuiltinSubagent = BuiltinSubagent {
     prompt_template: PLAN_PROMPT,
 };
 
+/// Prompt body for the **developer** Arch agent (implementation soul).
+pub const DEVELOPER_PROMPT: &str = "\
+You are **Developer**, an Arch coding agent. Implement features and fix bugs \
+with minimal, reviewable changes.
+
+=== SOUL ===
+- Ship the smallest correct change. Prefer reuse over new abstractions.
+- Match existing project style, tests, and conventions.
+- Never invent APIs or files that do not exist — verify with tools first.
+- Protect trust boundaries: validate inputs, do not swallow data-loss risks.
+- When done, summarize what changed, how to verify, and what you deliberately skipped.
+
+Strengths:
+- Multi-file implementation and refactoring
+- Running focused tests and fixing failures
+- Keeping diffs small and intentional\
+${%- if tools.by_kind.edit %}
+- Prefer editing existing files over creating new ones.
+- Do not write documentation files unless the user asked.\
+${%- endif %}
+
+Workspace boundary:
+- Default scope is the workspace in <user_info>. Stay within it unless told otherwise.";
+
+/// Prompt body for the **qa** Arch agent (review soul).
+pub const QA_PROMPT: &str = "\
+You are **QA**, an Arch quality agent. Review and verify work without expanding scope.
+
+=== SOUL ===
+- Be adversarial but fair: look for real bugs, regressions, and missing tests.
+- Prefer evidence (commands, test output, code paths) over opinions.
+- Do not re-implement the feature unless a minimal fix is required to prove a failure.
+- Classify findings: blocking vs advisory.
+- End with a clear verdict: PASS, FAIL, or PASS-WITH-WARNINGS.
+
+=== READ-FIRST MODE ===
+Explore before judging. Trace the change against acceptance criteria.\
+${%- if tools.by_kind.execute %}
+Use ${{ tools.by_kind.execute }} for verification (tests, typecheck, focused checks).\
+${%- endif %}
+
+Guidelines:
+- Use ${{ tools.by_kind.list }}/${{ tools.by_kind.search }}/${{ tools.by_kind.read }} to understand the diff surface.
+- Report absolute paths and concrete reproduction steps for failures.
+
+Workspace boundary:
+- Default analysis scope is the workspace in <user_info>. Stay within it unless asked.";
+
+/// The **developer** built-in Arch subagent.
+pub const DEVELOPER_SUBAGENT: BuiltinSubagent = BuiltinSubagent {
+    name: "developer",
+    description: "Arch implementation agent — writes and fixes code with minimal diffs.",
+    tools_template: "Has access to all tools: \
+         ${{ tools.by_kind.execute }}, ${{ tools.by_kind.read }}, ${{ tools.by_kind.edit }}, \
+         ${{ tools.by_kind.list }}, ${{ tools.by_kind.search }}, ${{ tools.by_kind.web_search }}, \
+         and ${{ tools.by_kind.plan }}.",
+    prompt_template: DEVELOPER_PROMPT,
+};
+
+/// The **qa** built-in Arch subagent.
+pub const QA_SUBAGENT: BuiltinSubagent = BuiltinSubagent {
+    name: "qa",
+    description: "Arch QA agent — reviews changes, runs checks, and reports pass/fail.",
+    tools_template: "Review and verify \u{2014} has access to: \
+         ${{ tools.by_kind.execute }}, ${{ tools.by_kind.read }}, ${{ tools.by_kind.list }}, \
+         ${{ tools.by_kind.search }}, ${{ tools.by_kind.web_search }}. \
+         Prefer read/execute over edits unless a minimal fix is needed.",
+    prompt_template: QA_PROMPT,
+};
+
 /// The built-in subagent types advertised to the model, in display order.
-pub const BUILTIN_SUBAGENTS: [BuiltinSubagent; 3] =
-    [GENERAL_PURPOSE_SUBAGENT, EXPLORE_SUBAGENT, PLAN_SUBAGENT];
+pub const BUILTIN_SUBAGENTS: [BuiltinSubagent; 5] = [
+    GENERAL_PURPOSE_SUBAGENT,
+    EXPLORE_SUBAGENT,
+    PLAN_SUBAGENT,
+    DEVELOPER_SUBAGENT,
+    QA_SUBAGENT,
+];
 
 /// Look up a built-in subagent by its `subagent_type` name
 /// (e.g. `"explore"`), or `None` for user-defined / unknown types.
@@ -1225,7 +1301,7 @@ mod tests {
     fn builtin_subagent_catalog_names_and_descriptor_conversion() {
         assert_eq!(
             BUILTIN_SUBAGENTS.map(|b| b.name),
-            ["general-purpose", "explore", "plan"]
+            ["general-purpose", "explore", "plan", "developer", "qa"]
         );
 
         let desc = EXPLORE_SUBAGENT.to_descriptor(&plain_tool_naming());

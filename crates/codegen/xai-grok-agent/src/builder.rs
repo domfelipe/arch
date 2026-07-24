@@ -1243,6 +1243,8 @@ fn builtin_tools_fragment(name: BuiltinAgentName) -> String {
         BuiltinAgentName::GeneralPurpose => xai_tool_types::GENERAL_PURPOSE_SUBAGENT,
         BuiltinAgentName::Explore => xai_tool_types::EXPLORE_SUBAGENT,
         BuiltinAgentName::Plan => xai_tool_types::PLAN_SUBAGENT,
+        BuiltinAgentName::Developer => xai_tool_types::DEVELOPER_SUBAGENT,
+        BuiltinAgentName::Qa => xai_tool_types::QA_SUBAGENT,
         _ => return String::new(),
     };
     subagent.render_tools(&SUBAGENT_TOOL_NAMING)

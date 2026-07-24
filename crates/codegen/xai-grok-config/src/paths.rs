@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 static GROK_HOME: OnceLock<PathBuf> = OnceLock::new();
+static ARCH_HOME: OnceLock<PathBuf> = OnceLock::new();
 
 #[cfg(target_os = "macos")]
 const CLAUDE_MANAGED_SETTINGS_PATH: &str =
@@ -55,6 +56,41 @@ pub fn user_grok_home() -> Option<PathBuf> {
     #[allow(deprecated)]
     let resolvable = std::env::var_os("GROK_HOME").is_some() || std::env::home_dir().is_some();
     resolvable.then(grok_home)
+}
+
+/// Default Arch user directory (`~/.arch`, canonicalized) when `ARCH_HOME` is unset.
+pub fn default_arch_home() -> PathBuf {
+    #[allow(deprecated)]
+    let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    dunce::canonicalize(&home).unwrap_or(home).join(".arch")
+}
+
+/// Per-user Arch config directory: `$ARCH_HOME` or `~/.arch`. Created if needed.
+///
+/// Runtime data still may live under [`grok_home`] during the thin-fork migration
+/// (`~/.grok` compatibility). Prefer this for new Arch-native surfaces (souls,
+/// agent memory, project overlays under `.arch`).
+pub fn arch_home() -> PathBuf {
+    ARCH_HOME
+        .get_or_init(|| {
+            let arch_home = if let Ok(v) = std::env::var("ARCH_HOME") {
+                PathBuf::from(v)
+            } else {
+                default_arch_home()
+            };
+            let _ = std::fs::create_dir_all(&arch_home);
+            arch_home
+        })
+        .clone()
+}
+
+/// User-global Arch home when one genuinely resolves (`Some` when `$ARCH_HOME`
+/// is set or a home directory is found). Never falls back to a cwd-relative
+/// `.arch`.
+pub fn user_arch_home() -> Option<PathBuf> {
+    #[allow(deprecated)]
+    let resolvable = std::env::var_os("ARCH_HOME").is_some() || std::env::home_dir().is_some();
+    resolvable.then(arch_home)
 }
 
 /// Canonical grok application path: `$GROK_HOME/bin/grok` (Unix) or `grok.exe` (Windows).
@@ -313,6 +349,13 @@ mod tests {
         let home = default_grok_home();
         assert!(!home.to_string_lossy().starts_with(r"\\?\"));
         assert!(home.ends_with(".grok"));
+    }
+
+    #[test]
+    fn default_arch_home_ends_with_dot_arch() {
+        let home = default_arch_home();
+        assert!(!home.to_string_lossy().starts_with(r"\\?\"));
+        assert!(home.ends_with(".arch"));
     }
 
     #[test]

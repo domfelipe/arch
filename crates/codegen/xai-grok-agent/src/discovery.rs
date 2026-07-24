@@ -1,7 +1,8 @@
 //! Agent definition file discovery.
 //!
-//! Searches `.grok/agents/` and `.claude/agents/` from cwd to repo root,
-//! then `~/.grok/agents/`, then `~/.claude/agents/`. Name-based dedup keeps
+//! Searches `.arch/agents/`, `.arch/souls/`, `.grok/agents/`, and
+//! `.claude/agents/` from cwd to repo root, then user homes
+//! (`~/.arch/…`, `~/.grok/…`, `~/.claude/…`). Name-based dedup keeps
 //! highest priority.
 
 use std::collections::HashMap;
@@ -14,8 +15,13 @@ use crate::config::{AgentDefinition, AgentScope, BuiltinAgentName};
 use crate::error::AgentBuildError;
 use crate::prompt::context::TemplateOverride;
 
-/// Project-level agent directories to scan (`.grok/agents/` + `.claude/agents/` compat).
-const PROJECT_AGENT_SUBDIRS: &[&str] = &[".grok/agents", ".claude/agents"];
+/// Project-level agent directories to scan (Arch-native + Grok/Claude compat).
+const PROJECT_AGENT_SUBDIRS: &[&str] = &[
+    ".arch/agents",
+    ".arch/souls",
+    ".grok/agents",
+    ".claude/agents",
+];
 
 /// Existing project-level agent dirs (`.grok/agents` / `.claude/agents`), walked
 /// from `cwd` up to the git worktree root (inclusive). Returns
@@ -55,7 +61,7 @@ pub struct SubagentEntry {
 /// Where a subagent entry came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubagentSource {
-    /// One of the 3 built-in subagent types, not shadowed by a user agent.
+    /// One of the built-in subagent types, not shadowed by a user agent.
     Builtin(BuiltinAgentName),
     /// User-defined agent from project, user, or bundled discovery.
     UserDefined { scope: AgentScope },
@@ -73,7 +79,14 @@ pub enum SubagentSource {
 /// 4. Filter: remove agents toggled off via `[subagents.toggle]`
 pub fn all_subagents(cwd: &Path, toggle: &HashMap<String, bool>) -> Vec<SubagentEntry> {
     let grok = xai_grok_config::user_grok_home();
-    all_subagents_with_home(cwd, toggle, dirs::home_dir().as_deref(), grok.as_deref())
+    let arch = xai_grok_config::user_arch_home();
+    all_subagents_with_home(
+        cwd,
+        toggle,
+        dirs::home_dir().as_deref(),
+        grok.as_deref(),
+        arch.as_deref(),
+    )
 }
 
 fn all_subagents_with_home(
@@ -81,8 +94,9 @@ fn all_subagents_with_home(
     toggle: &HashMap<String, bool>,
     home: Option<&Path>,
     grok_home: Option<&Path>,
+    arch_home: Option<&Path>,
 ) -> Vec<SubagentEntry> {
-    let discovered = discover_with_home(cwd, home, grok_home);
+    let discovered = discover_with_home(cwd, home, grok_home, arch_home);
     merge_subagents(discovered, toggle)
 }
 
@@ -183,19 +197,27 @@ fn merge_subagents(
 /// Discover all agent definitions from the filesystem.
 ///
 /// Search order (highest priority first):
-/// 1. `.grok/agents/` walking from `cwd` up to repo root
-/// 2. `~/.grok/agents/` (user-level)
+/// 1. `.arch/agents|souls/` and `.grok/agents/` walking from `cwd` up to repo root
+/// 2. `~/.arch/agents|souls/` then `~/.grok/agents/` (user-level)
 /// 3. `~/.claude/agents/` (compat user-level)
-/// 4. `~/.grok/bundled/agents/` (bundled, lowest priority)
+/// 4. Bundled agents under arch/grok homes (lowest priority)
 ///
 /// Deduplicates by name — higher-priority definitions win.
-/// User-level agent directories in priority order: user grok agents, `.claude`
-/// compat agents, then bundled. `.grok` dirs resolve from `grok_home`
-/// (GROK_HOME-aware) plus the legacy literal `~/.grok` when GROK_HOME points
-/// elsewhere; `.claude` resolves from `home`.
+/// User-level agent directories in priority order: Arch souls/agents, user grok
+/// agents, `.claude` compat agents, then bundled. `.grok` dirs resolve from
+/// `grok_home` (GROK_HOME-aware) plus the legacy literal `~/.grok` when
+/// GROK_HOME points elsewhere; `.arch` resolves from `arch_home` / `home`.
 pub(crate) fn user_agent_dirs(
     home: Option<&Path>,
     grok_home: Option<&Path>,
+) -> Vec<(std::path::PathBuf, AgentScope)> {
+    user_agent_dirs_with_arch(home, grok_home, xai_grok_config::user_arch_home().as_deref())
+}
+
+pub(crate) fn user_agent_dirs_with_arch(
+    home: Option<&Path>,
+    grok_home: Option<&Path>,
+    arch_home: Option<&Path>,
 ) -> Vec<(std::path::PathBuf, AgentScope)> {
     // Legacy literal ~/.grok, included only when it differs from grok_home
     // (i.e. GROK_HOME points elsewhere) so agents left in the old location are
@@ -203,8 +225,19 @@ pub(crate) fn user_agent_dirs(
     let legacy_grok = home
         .map(|h| h.join(".grok"))
         .filter(|legacy| grok_home != Some(legacy.as_path()));
+    let legacy_arch = home
+        .map(|h| h.join(".arch"))
+        .filter(|legacy| arch_home != Some(legacy.as_path()));
 
     let mut dirs = Vec::new();
+    if let Some(a) = arch_home {
+        dirs.push((a.join("agents"), AgentScope::User));
+        dirs.push((a.join("souls"), AgentScope::User));
+    }
+    if let Some(l) = &legacy_arch {
+        dirs.push((l.join("agents"), AgentScope::User));
+        dirs.push((l.join("souls"), AgentScope::User));
+    }
     if let Some(g) = grok_home {
         dirs.push((g.join("agents"), AgentScope::User));
     }
@@ -213,6 +246,9 @@ pub(crate) fn user_agent_dirs(
     }
     if let Some(h) = home {
         dirs.push((h.join(".claude").join("agents"), AgentScope::User));
+    }
+    if let Some(a) = arch_home {
+        dirs.push((a.join("bundled").join("agents"), AgentScope::Bundled));
     }
     if let Some(g) = grok_home {
         dirs.push((g.join("bundled").join("agents"), AgentScope::Bundled));
@@ -225,20 +261,27 @@ pub(crate) fn user_agent_dirs(
 
 pub fn discover(cwd: &Path) -> Vec<AgentDefinition> {
     let grok = xai_grok_config::user_grok_home();
-    discover_with_home(cwd, dirs::home_dir().as_deref(), grok.as_deref())
+    let arch = xai_grok_config::user_arch_home();
+    discover_with_home(
+        cwd,
+        dirs::home_dir().as_deref(),
+        grok.as_deref(),
+        arch.as_deref(),
+    )
 }
 
 fn discover_with_home(
     cwd: &Path,
     home: Option<&Path>,
     grok_home: Option<&Path>,
+    arch_home: Option<&Path>,
 ) -> Vec<AgentDefinition> {
     let mut definitions = Vec::new();
     let mut seen_names = std::collections::HashSet::new();
 
     load_project_definitions(cwd, &mut definitions, &mut seen_names);
 
-    for (dir, scope) in user_agent_dirs(home, grok_home) {
+    for (dir, scope) in user_agent_dirs_with_arch(home, grok_home, arch_home) {
         if dir.is_dir() {
             load_definitions_from_dir(&dir, scope, &mut definitions, &mut seen_names);
         }
@@ -252,13 +295,20 @@ fn discover_with_home(
 /// Checks built-ins first, then user-level dirs, then bundled.
 pub fn by_name(name: &str) -> Option<AgentDefinition> {
     let grok = xai_grok_config::user_grok_home();
-    by_name_with_home(name, dirs::home_dir().as_deref(), grok.as_deref())
+    let arch = xai_grok_config::user_arch_home();
+    by_name_with_home(
+        name,
+        dirs::home_dir().as_deref(),
+        grok.as_deref(),
+        arch.as_deref(),
+    )
 }
 
 fn by_name_with_home(
     name: &str,
     home: Option<&Path>,
     grok_home: Option<&Path>,
+    arch_home: Option<&Path>,
 ) -> Option<AgentDefinition> {
     // Check built-ins first — type-safe via BuiltinAgentName strum enum
     if let Ok(builtin) = BuiltinAgentName::from_str(name) {
@@ -266,7 +316,7 @@ fn by_name_with_home(
     }
 
     {
-        let home_dirs = user_agent_dirs(home, grok_home);
+        let home_dirs = user_agent_dirs_with_arch(home, grok_home, arch_home);
         for (agents_dir, scope) in home_dirs {
             if let Some(def) = load_definition_by_name(
                 &agents_dir,
@@ -284,11 +334,18 @@ fn by_name_with_home(
 
 /// Find an agent definition by name, with project-level discovery.
 ///
-/// Project-level `.grok/agents/` has highest priority, then falls back
-/// to built-ins, user-level, and finally bundled definitions.
+/// Project-level `.arch/agents|souls/` and `.grok/agents/` have highest
+/// priority, then falls back to built-ins, user-level, and bundled definitions.
 pub fn by_name_in_cwd(name: &str, cwd: &Path) -> Option<AgentDefinition> {
     let grok = xai_grok_config::user_grok_home();
-    by_name_in_cwd_with_home(name, cwd, dirs::home_dir().as_deref(), grok.as_deref())
+    let arch = xai_grok_config::user_arch_home();
+    by_name_in_cwd_with_home(
+        name,
+        cwd,
+        dirs::home_dir().as_deref(),
+        grok.as_deref(),
+        arch.as_deref(),
+    )
 }
 
 fn by_name_in_cwd_with_home(
@@ -296,12 +353,13 @@ fn by_name_in_cwd_with_home(
     cwd: &Path,
     home: Option<&Path>,
     grok_home: Option<&Path>,
+    arch_home: Option<&Path>,
 ) -> Option<AgentDefinition> {
     if let Some(def) = load_project_definition_by_name(name, cwd) {
         return Some(def);
     }
 
-    by_name_with_home(name, home, grok_home)
+    by_name_with_home(name, home, grok_home, arch_home)
 }
 
 /// Return all built-in subagent definitions.
@@ -364,12 +422,14 @@ pub fn all_subagents_with_plugins(
     plugins: Option<&crate::plugins::PluginRegistry>,
 ) -> Vec<SubagentEntry> {
     let grok = xai_grok_config::user_grok_home();
+    let arch = xai_grok_config::user_arch_home();
     all_subagents_with_plugins_and_home(
         cwd,
         toggle,
         plugins,
         dirs::home_dir().as_deref(),
         grok.as_deref(),
+        arch.as_deref(),
     )
 }
 
@@ -379,8 +439,9 @@ fn all_subagents_with_plugins_and_home(
     plugins: Option<&crate::plugins::PluginRegistry>,
     home: Option<&Path>,
     grok_home: Option<&Path>,
+    arch_home: Option<&Path>,
 ) -> Vec<SubagentEntry> {
-    let discovered = discover_with_home(cwd, home, grok_home);
+    let discovered = discover_with_home(cwd, home, grok_home, arch_home);
     let mut entries = merge_subagents(discovered, toggle);
 
     // Append plugin agents under qualified names
@@ -451,12 +512,14 @@ pub fn by_name_in_cwd_with_plugins(
     plugins: Option<&crate::plugins::PluginRegistry>,
 ) -> Option<AgentDefinition> {
     let grok = xai_grok_config::user_grok_home();
+    let arch = xai_grok_config::user_arch_home();
     by_name_in_cwd_with_plugins_and_home(
         name,
         cwd,
         plugins,
         dirs::home_dir().as_deref(),
         grok.as_deref(),
+        arch.as_deref(),
     )
 }
 
@@ -466,9 +529,10 @@ fn by_name_in_cwd_with_plugins_and_home(
     plugins: Option<&crate::plugins::PluginRegistry>,
     home: Option<&Path>,
     grok_home: Option<&Path>,
+    arch_home: Option<&Path>,
 ) -> Option<AgentDefinition> {
     // First try native resolution (project > built-in > user > bundled)
-    if let Some(def) = by_name_in_cwd_with_home(name, cwd, home, grok_home) {
+    if let Some(def) = by_name_in_cwd_with_home(name, cwd, home, grok_home, arch_home) {
         return Some(def);
     }
 
@@ -835,7 +899,7 @@ mod tests {
         write_agent_file(&agents_dir, "test-agent.md", "test-agent", "A test");
         write_agent_file(&agents_dir, "another.md", "another", "Another");
 
-        let defs = discover_with_home(tmp.path(), None, None);
+        let defs = discover_with_home(tmp.path(), None, None, None);
         assert_eq!(defs.len(), 2);
         let names: Vec<_> = defs.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"test-agent"));
@@ -852,7 +916,7 @@ mod tests {
         fs::write(agents_dir.join("readme.txt"), "not an agent").unwrap();
         fs::write(agents_dir.join("config.yaml"), "key: value").unwrap();
 
-        let defs = discover_with_home(tmp.path(), None, None);
+        let defs = discover_with_home(tmp.path(), None, None, None);
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].name, "valid");
     }
@@ -867,7 +931,7 @@ mod tests {
         // Invalid: no frontmatter
         fs::write(agents_dir.join("bad.md"), "just text, no frontmatter").unwrap();
 
-        let defs = discover_with_home(tmp.path(), None, None);
+        let defs = discover_with_home(tmp.path(), None, None, None);
         // Should still find the good one, skip the bad one
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].name, "good");
@@ -890,7 +954,7 @@ mod tests {
         write_agent_file(&agents_dir_2, "dup.md", "dup", "Child version");
 
         // Discover from the inner dir — inner should win (discovered first)
-        let defs = discover_with_home(&inner_dir, None, None);
+        let defs = discover_with_home(&inner_dir, None, None, None);
         let dup_defs: Vec<_> = defs.iter().filter(|d| d.name == "dup").collect();
         assert_eq!(dup_defs.len(), 1, "Should dedup by name");
     }
@@ -911,7 +975,7 @@ mod tests {
             "Bundled agent",
         );
 
-        let defs = discover_with_home(&cwd, Some(&home), Some(&home.join(".grok")));
+        let defs = discover_with_home(&cwd, Some(&home), Some(&home.join(".grok")), None);
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].name, "bundled-agent");
         assert_eq!(defs[0].scope, AgentScope::Bundled);
@@ -934,7 +998,7 @@ mod tests {
         );
 
         let def =
-            by_name_in_cwd_with_home("bundled-only", &cwd, Some(&home), Some(&home.join(".grok")))
+            by_name_in_cwd_with_home("bundled-only", &cwd, Some(&home), Some(&home.join(".grok")), None)
                 .unwrap();
         assert_eq!(def.scope, AgentScope::Bundled);
         assert_eq!(def.description, "Bundled only");
@@ -955,7 +1019,7 @@ mod tests {
         write_agent_file(&bundled_dir, "reviewer.md", "reviewer", "Bundled reviewer");
 
         let def =
-            by_name_in_cwd_with_home("reviewer", &cwd, Some(&home), Some(&home.join(".grok")))
+            by_name_in_cwd_with_home("reviewer", &cwd, Some(&home), Some(&home.join(".grok")), None)
                 .unwrap();
         assert_eq!(def.scope, AgentScope::User);
         assert_eq!(def.description, "User reviewer");
@@ -972,7 +1036,7 @@ mod tests {
 
         write_agent_file(&bundled_dir, "explore.md", "explore", "Bundled explore");
 
-        let def = by_name_in_cwd_with_home("explore", &cwd, Some(&home), Some(&home.join(".grok")))
+        let def = by_name_in_cwd_with_home("explore", &cwd, Some(&home), Some(&home.join(".grok")), None)
             .unwrap();
         assert_eq!(def.scope, AgentScope::BuiltIn);
         assert_ne!(def.description, "Bundled explore");
@@ -992,7 +1056,7 @@ mod tests {
         write_agent_file(&bundled_dir, "reviewer.md", "reviewer", "Bundled reviewer");
 
         let def =
-            by_name_in_cwd_with_home("reviewer", &cwd, Some(&home), Some(&home.join(".grok")))
+            by_name_in_cwd_with_home("reviewer", &cwd, Some(&home), Some(&home.join(".grok")), None)
                 .unwrap();
         assert_eq!(def.scope, AgentScope::Project);
         assert_eq!(def.description, "Project reviewer");
@@ -1074,13 +1138,15 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_returns_3_builtins_when_no_user_agents() {
+    fn test_merge_returns_builtins_when_no_user_agents() {
         let entries = merge_subagents(vec![], &HashMap::new());
-        assert_eq!(entries.len(), 3);
+        assert_eq!(entries.len(), 5);
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         assert!(names.contains(&"general-purpose"));
         assert!(names.contains(&"explore"));
         assert!(names.contains(&"plan"));
+        assert!(names.contains(&"developer"));
+        assert!(names.contains(&"qa"));
         // All should be Builtin source
         for entry in &entries {
             assert!(
@@ -1096,7 +1162,7 @@ mod tests {
     fn test_merge_filters_toggled_off_builtins() {
         let toggle = HashMap::from([("plan".to_string(), false)]);
         let entries = merge_subagents(vec![], &toggle);
-        assert_eq!(entries.len(), 2);
+        assert_eq!(entries.len(), 4);
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         assert!(names.contains(&"general-purpose"));
         assert!(names.contains(&"explore"));
@@ -1111,7 +1177,7 @@ mod tests {
             AgentScope::Project,
         )];
         let entries = merge_subagents(discovered, &HashMap::new());
-        assert_eq!(entries.len(), 4); // 3 built-ins + 1 user
+        assert_eq!(entries.len(), 6); // 5 built-ins + 1 user
         let cr = entries.iter().find(|e| e.name == "code-reviewer").unwrap();
         assert_eq!(cr.description, "Reviews code");
         assert_eq!(
@@ -1132,7 +1198,7 @@ mod tests {
         )];
         let toggle = HashMap::from([("code-reviewer".to_string(), false)]);
         let entries = merge_subagents(discovered, &toggle);
-        assert_eq!(entries.len(), 3); // only built-ins
+        assert_eq!(entries.len(), 5); // only built-ins
         assert!(entries.iter().all(|e| e.name != "code-reviewer"));
     }
 
@@ -1144,7 +1210,7 @@ mod tests {
             AgentScope::Project,
         )];
         let entries = merge_subagents(discovered, &HashMap::new());
-        assert_eq!(entries.len(), 3); // still 3 — replaced, not appended
+        assert_eq!(entries.len(), 5); // still 5 — replaced, not appended
         let explore = entries.iter().find(|e| e.name == "explore").unwrap();
         assert_eq!(explore.description, "Custom explore agent");
         assert_eq!(
@@ -1181,7 +1247,7 @@ mod tests {
             AgentScope::User,
         )];
         let entries = merge_subagents(discovered, &HashMap::new());
-        assert_eq!(entries.len(), 3); // still 3 built-ins
+        assert_eq!(entries.len(), 5); // still 5 built-ins
         let explore = entries.iter().find(|e| e.name == "explore").unwrap();
         // Should still be the built-in, not the user-level agent
         assert!(
@@ -1216,14 +1282,16 @@ mod tests {
             AgentScope::User,
         )];
         let entries = merge_subagents(discovered, &HashMap::new());
-        assert_eq!(entries.len(), 4); // 3 built-ins + 1 user
+        assert_eq!(entries.len(), 6); // 5 built-ins + 1 user
         // Verify ordering: built-ins first, then user
         assert!(matches!(&entries[0].source, SubagentSource::Builtin(_)));
         assert!(matches!(&entries[1].source, SubagentSource::Builtin(_)));
         assert!(matches!(&entries[2].source, SubagentSource::Builtin(_)));
-        assert_eq!(entries[3].name, "migration-helper");
+        assert!(matches!(&entries[3].source, SubagentSource::Builtin(_)));
+        assert!(matches!(&entries[4].source, SubagentSource::Builtin(_)));
+        assert_eq!(entries[5].name, "migration-helper");
         assert_eq!(
-            entries[3].source,
+            entries[5].source,
             SubagentSource::UserDefined {
                 scope: AgentScope::User
             }
@@ -1238,9 +1306,9 @@ mod tests {
             AgentScope::Bundled,
         )];
         let entries = merge_subagents(discovered, &HashMap::new());
-        assert_eq!(entries[3].name, "bundled-helper");
+        assert_eq!(entries[5].name, "bundled-helper");
         assert_eq!(
-            entries[3].source,
+            entries[5].source,
             SubagentSource::UserDefined {
                 scope: AgentScope::Bundled
             }
@@ -1253,6 +1321,8 @@ mod tests {
             ("general-purpose".to_string(), false),
             ("explore".to_string(), false),
             ("plan".to_string(), false),
+            ("developer".to_string(), false),
+            ("qa".to_string(), false),
         ]);
         let entries = merge_subagents(vec![], &toggle);
         assert!(entries.is_empty(), "all toggled off should return empty");
@@ -1265,7 +1335,7 @@ mod tests {
         // and the built-in explore remains.
         let discovered = vec![]; // no valid user agents discovered
         let entries = merge_subagents(discovered, &HashMap::new());
-        assert_eq!(entries.len(), 3);
+        assert_eq!(entries.len(), 5);
         let explore = entries.iter().find(|e| e.name == "explore").unwrap();
         assert!(matches!(
             &explore.source,
@@ -1320,12 +1390,19 @@ mod tests {
             "A test subagent",
         );
 
-        let entries = all_subagents_with_home(tmp.path(), &HashMap::new(), None, None);
-        assert_eq!(entries.len(), 4);
+        let entries = all_subagents_with_home(tmp.path(), &HashMap::new(), None, None, None);
+        assert_eq!(entries.len(), 6);
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(
             names,
-            vec!["general-purpose", "explore", "plan", "test-agent"]
+            vec![
+                "general-purpose",
+                "explore",
+                "plan",
+                "developer",
+                "qa",
+                "test-agent"
+            ]
         );
     }
 
@@ -1355,6 +1432,7 @@ mod tests {
             Some(&registry),
             Some(&home),
             Some(&home.join(".grok")),
+            None,
         );
 
         let native = entries.iter().find(|e| e.name == "reviewer").unwrap();
@@ -1390,6 +1468,7 @@ mod tests {
             Some(&registry),
             Some(&home),
             Some(&home.join(".grok")),
+            None,
         )
         .unwrap();
 
@@ -1425,6 +1504,7 @@ mod tests {
             Some(&registry),
             Some(&home),
             Some(&home.join(".grok")),
+            None,
         )
         .unwrap();
         let bare_body = bare.prompt_body.as_deref().unwrap();
@@ -1444,6 +1524,7 @@ mod tests {
             Some(&registry),
             Some(&home),
             Some(&home.join(".grok")),
+            None,
         )
         .unwrap();
         let qualified_body = qualified.prompt_body.as_deref().unwrap();
@@ -1494,8 +1575,11 @@ mod tests {
         );
 
         let toggle = HashMap::from([("test-agent".to_string(), false)]);
-        let entries = all_subagents_with_home(tmp.path(), &toggle, None, None);
+        let entries = all_subagents_with_home(tmp.path(), &toggle, None, None, None);
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(names, vec!["general-purpose", "explore", "plan"]);
+        assert_eq!(
+            names,
+            vec!["general-purpose", "explore", "plan", "developer", "qa"]
+        );
     }
 }
