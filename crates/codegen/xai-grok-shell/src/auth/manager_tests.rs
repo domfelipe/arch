@@ -3128,10 +3128,26 @@ async fn auth_rejects_token_refreshed_into_wrong_team() {
     );
 }
 
+/// Clear product auth path env overrides so custom-home AuthManager tests
+/// stay isolated from concurrent `ARCH_AUTH_*` serial tests.
+fn isolate_product_auth_env() -> (
+    xai_grok_test_support::EnvGuard,
+    xai_grok_test_support::EnvGuard,
+    xai_grok_test_support::EnvGuard,
+) {
+    (
+        xai_grok_test_support::EnvGuard::unset("ARCH_AUTH_PATH"),
+        xai_grok_test_support::EnvGuard::unset("ARCH_AUTH_LEGACY_PATH"),
+        xai_grok_test_support::EnvGuard::unset("GROK_AUTH_PATH"),
+    )
+}
+
 /// A sibling-written wrong-team token picked up by `force_reload_from_disk`
 /// (relay reconnect) is cleared, not just hidden.
 #[test]
+#[serial_test::serial(arch_auth_env)]
 fn force_reload_clears_wrong_team_token() {
+    let _iso = isolate_product_auth_env();
     let dir = tempfile::tempdir().unwrap();
     let cfg = pinned_cfg("team-good");
     let scope = cfg.auth_scope();
@@ -3161,7 +3177,9 @@ fn force_reload_clears_wrong_team_token() {
 /// RETAIN it, not discard it (the discard previously kicked off a
 /// 401 -> reactive refresh -> suspend-straddle -> invalid_grant cascade).
 #[test]
+#[serial_test::serial(arch_auth_env)]
 fn force_reload_retains_live_rt_on_transient_file_missing() {
+    let _iso = isolate_product_auth_env();
     let dir = tempfile::tempdir().unwrap();
     let mgr = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
 
@@ -3195,7 +3213,9 @@ fn force_reload_retains_live_rt_on_transient_file_missing() {
 /// is known-dead, so a persistent FileMissing must drop it (and clear the
 /// permanent_failure with it) so the next request reports `NotLoggedIn`.
 #[tokio::test]
+#[serial_test::serial(arch_auth_env)]
 async fn force_reload_drops_rt_when_permanent_failure_set() {
+    let _iso = isolate_product_auth_env();
     let dir = tempfile::tempdir().unwrap();
     let mgr = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
 
@@ -3233,7 +3253,9 @@ async fn force_reload_drops_rt_when_permanent_failure_set() {
 /// "logged out / scope removed" signal (distinct from a missing file), so the
 /// in-memory credentials are dropped even though an RT is present.
 #[test]
+#[serial_test::serial(arch_auth_env)]
 fn force_reload_drops_creds_on_entry_missing() {
+    let _iso = isolate_product_auth_env();
     let dir = tempfile::tempdir().unwrap();
     let mgr = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
 
@@ -3266,7 +3288,9 @@ fn force_reload_drops_creds_on_entry_missing() {
 /// When disk holds a fresh token for our scope, the reload adopts it on the
 /// first read (no retry) — the healthy path is unchanged.
 #[test]
+#[serial_test::serial(arch_auth_env)]
 fn force_reload_adopts_fresh_disk_token() {
+    let _iso = isolate_product_auth_env();
     let dir = tempfile::tempdir().unwrap();
     let cfg = GrokComConfig::default();
     let scope = cfg.auth_scope();
@@ -4421,4 +4445,61 @@ fn force_reload_reads_legacy_when_primary_file_missing() {
         !primary.exists(),
         "read/reload must not materialize primary auth.json"
     );
+}
+
+/// Logout (remove_scope) must seal product primary with a tombstone so
+/// force_reload cannot re-adopt still-present legacy credentials.
+#[test]
+#[serial_test::serial(arch_auth_env)]
+fn remove_scope_then_force_reload_does_not_re_adopt_legacy() {
+    use xai_grok_test_support::EnvGuard;
+
+    let root = tempfile::tempdir().unwrap();
+    let primary = root.path().join("arch-primary-auth.json");
+    let legacy = root.path().join("legacy-auth.json");
+    let _p = EnvGuard::set("ARCH_AUTH_PATH", &primary);
+    let _l = EnvGuard::set("ARCH_AUTH_LEGACY_PATH", &legacy);
+
+    let cfg = GrokComConfig::default();
+    let scope = cfg.auth_scope();
+    let session = GrokAuth {
+        key: "session-on-both".into(),
+        auth_mode: AuthMode::Oidc,
+        refresh_token: Some("rt-both".into()),
+        expires_at: Some(Utc::now() + Duration::hours(2)),
+        ..GrokAuth::test_default()
+    };
+    let mut store = AuthStore::new();
+    store.insert(scope.clone(), session.clone());
+    write_auth_json(&legacy, &store).unwrap();
+    write_auth_json(&primary, &store).unwrap();
+
+    let home = xai_grok_config::default_grok_home();
+    let mgr = Arc::new(AuthManager::new(&home, cfg));
+    assert_eq!(
+        mgr.current_or_expired().map(|a| a.key),
+        Some("session-on-both".into())
+    );
+
+    mgr.remove_scope(&scope).unwrap();
+    assert!(mgr.current_or_expired().is_none(), "memory cleared on logout");
+    assert!(
+        primary.exists(),
+        "logout must leave product primary tombstone"
+    );
+    assert!(
+        read_auth_json(&primary).unwrap().is_empty(),
+        "tombstone is empty"
+    );
+    // Legacy still has the session — must not come back.
+    assert!(read_auth_json(&legacy).unwrap().contains_key(&scope));
+
+    mgr.force_reload_from_disk_with(RELOAD_RETRY_TRIES, StdDuration::ZERO);
+    assert!(
+        mgr.current_or_expired().is_none(),
+        "force_reload after logout must not re-adopt legacy"
+    );
+    let (disk, state) = mgr.read_disk_auth_with_state();
+    assert_eq!(state, DiskAuthState::EntryMissing);
+    assert!(disk.is_none());
 }

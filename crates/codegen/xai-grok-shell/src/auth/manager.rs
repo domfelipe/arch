@@ -33,7 +33,7 @@ use super::model::{
 };
 use super::refresh::{RefreshOutcome, TokenRefresher, resolve_refresh_credential};
 use super::storage::{
-    AuthFileLock, read_auth_json, read_auth_json_or_empty_recovering_corrupt,
+    AuthFileLock, persist_auth_store, read_auth_json, read_auth_json_or_empty_recovering_corrupt,
     read_auth_store_with_legacy_fallback, write_auth_json,
 };
 
@@ -44,9 +44,7 @@ use chrono::DateTime;
 #[cfg(test)]
 use enrichment::apply_user_info_enrichment;
 
-#[cfg(test)]
-use super::model::AuthStore;
-use super::model::LEGACY_SCOPE;
+use super::model::{AuthStore, LEGACY_SCOPE};
 
 /// Why a token refresh is being requested.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -456,7 +454,8 @@ impl AuthManager {
     /// Remove a scope entry from auth.json. When `scope == self.scope`, also
     /// drops in-memory auth so a later `auth()` reports `NotLoggedIn`, not stale
     /// `invalid_grant` (the scoped verdict reads inert with no credential).
-    /// Empties auth.json by deleting the file.
+    /// Empties product primary via a `{}` tombstone (not delete) so legacy
+    /// `~/.grok` is not re-adopted after logout.
     ///
     /// Best-effort: takes a non-blocking lock and skips the disk write if
     /// another process holds it (the stale entry is cleaned up on next launch).
@@ -489,16 +488,23 @@ impl AuthManager {
         Ok(())
     }
 
-    /// Drop `scope` from auth.json and persist, deleting the file when the last
-    /// scope is gone. Caller holds the `auth.json` lock (taken by
-    /// [`Self::remove_scope_impl`]).
+    /// Drop `scope` from auth.json and persist. When the last scope is gone,
+    /// product primary gets an empty `{}` tombstone (blocks NotFound→legacy);
+    /// custom homes delete the file. Caller holds the `auth.json` lock.
     fn write_scope_removal(&self, scope: &str) -> std::io::Result<ScopeRemoval> {
-        let Ok(mut auth_store) = read_auth_json(&self.path) else {
-            return Ok(ScopeRemoval::SkippedUnreadable);
+        let mut auth_store = match read_auth_json(&self.path) {
+            Ok(s) => s,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // Primary never written: seal logout with a product tombstone
+                // so force_reload cannot re-adopt legacy credentials.
+                persist_auth_store(&self.path, &AuthStore::new())?;
+                return Ok(ScopeRemoval::FileDeleted);
+            }
+            Err(_) => return Ok(ScopeRemoval::SkippedUnreadable),
         };
         auth_store.remove(scope);
         if auth_store.is_empty() {
-            let _ = std::fs::remove_file(&self.path);
+            persist_auth_store(&self.path, &auth_store)?;
             Ok(ScopeRemoval::FileDeleted)
         } else {
             write_auth_json(&self.path, &auth_store)?;

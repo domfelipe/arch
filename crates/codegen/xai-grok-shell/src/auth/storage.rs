@@ -410,6 +410,28 @@ fn read_auth_store_for_write(primary: &Path) -> std::io::Result<AuthStore> {
     }
 }
 
+/// Persist `store` to `primary`.
+///
+/// When the map is empty and `primary` is the Arch product auth path, write an
+/// empty `{}` **tombstone** instead of deleting the file. Deleting would make
+/// the next read hit NotFound → legacy and re-adopt `~/.grok` credentials after
+/// logout/clear. Custom homes still delete empty files (no legacy fallback).
+pub fn persist_auth_store(primary: &Path, store: &AuthStore) -> std::io::Result<()> {
+    if store.is_empty() {
+        if primary_allows_legacy_fallback(primary) {
+            write_auth_json(primary, store)
+        } else {
+            match std::fs::remove_file(primary) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(e),
+            }
+        }
+    } else {
+        write_auth_json(primary, store)
+    }
+}
+
 /// Read a single auth token from `auth.json` by scope key.
 /// Falls back to the legacy `https://accounts.x.ai/sign-in` scope key
 /// when the requested scope is not found (devbox auth.json migration).
@@ -449,16 +471,14 @@ pub fn store_api_key(grok_home: &Path, api_key: &str) -> std::io::Result<()> {
 }
 
 /// Remove the `xai::api_key` scope from auth.json (primary Arch path only).
+///
+/// On the product primary path, an empty store is written as a `{}` tombstone
+/// so subsequent reads do not fall through to legacy `~/.grok/auth.json`.
 pub fn clear_api_key(grok_home: &Path) -> std::io::Result<()> {
     let path = auth_path_for_home(grok_home);
     let mut map = read_auth_store_for_write(&path)?;
     map.remove(API_KEY_SCOPE);
-    if map.is_empty() {
-        let _ = std::fs::remove_file(&path);
-    } else {
-        write_auth_json(&path, &map)?;
-    }
-    Ok(())
+    persist_auth_store(&path, &map)
 }
 
 #[cfg(test)]
@@ -749,6 +769,51 @@ mod arch_auth_path_tests {
         assert_eq!(
             read_api_key(&default_grok_home()).as_deref(),
             Some("legacy-only-key")
+        );
+    }
+
+    #[test]
+    #[serial_test::serial(arch_auth_env)]
+    fn clear_api_key_with_legacy_present_does_not_re_adopt() {
+        let root = tempfile::tempdir().unwrap();
+        let primary = root.path().join("arch-primary.json");
+        let legacy = root.path().join("legacy.json");
+        let _p = EnvGuard::set("ARCH_AUTH_PATH", &primary);
+        let _l = EnvGuard::set("ARCH_AUTH_LEGACY_PATH", &legacy);
+
+        let mut legacy_map = AuthStore::new();
+        legacy_map.insert(
+            API_KEY_SCOPE.to_owned(),
+            GrokAuth {
+                key: "legacy-secret".into(),
+                auth_mode: AuthMode::ApiKey,
+                ..Default::default()
+            },
+        );
+        write_auth_json(&legacy, &legacy_map).unwrap();
+
+        let home = default_grok_home();
+        store_api_key(&home, "primary-secret").unwrap();
+        assert_eq!(read_api_key(&home).as_deref(), Some("primary-secret"));
+
+        clear_api_key(&home).unwrap();
+        assert!(
+            primary.exists(),
+            "product primary must remain as logout tombstone"
+        );
+        let on_disk = read_auth_json(&primary).unwrap();
+        assert!(on_disk.is_empty(), "tombstone is empty object, not deleted");
+        assert!(
+            read_api_key(&home).is_none(),
+            "clear must not re-adopt legacy key after tombstone"
+        );
+        // Legacy file untouched.
+        assert_eq!(
+            read_auth_json(&legacy)
+                .unwrap()
+                .get(API_KEY_SCOPE)
+                .map(|a| a.key.as_str()),
+            Some("legacy-secret")
         );
     }
 }
