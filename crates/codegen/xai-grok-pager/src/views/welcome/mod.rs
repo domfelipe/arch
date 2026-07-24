@@ -378,11 +378,11 @@ impl WelcomeLayout {
 
 /// Controls what the version badge renders.
 pub(super) enum VersionBadgeMode<'a> {
-    /// Full badge: team | tier | api_key | **Grok Build** VERSION+channel **Beta** (right-aligned).
+    /// Full badge: team | tier | api_key | **Arch Preview** VERSION (right-aligned).
     Full { subscription_tier: Option<&'a str> },
-    /// Hero footer: team | api_key | Grok Build Beta [channel] (right-aligned, gray).
+    /// Hero footer: team | api_key | Arch Preview (right-aligned, gray).
     HeroFooter,
-    /// Hero inline: **Grok Build Beta**  VERSION (left-aligned).
+    /// Hero inline: **Arch Preview** VERSION (left-aligned).
     HeroInline,
 }
 
@@ -434,46 +434,34 @@ pub(super) fn render_version_badge(
         spans.push(sep);
     }
 
-    let channel = xai_grok_update::channel_label();
     match &mode {
         VersionBadgeMode::Full { .. } => {
             spans.push(Span::styled(
-                "Grok Build  ",
+                "Arch Preview  ",
                 Style::default()
                     .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD),
             ));
             spans.push(Span::styled(
-                format!("{}{}", xai_grok_version::VERSION, channel),
+                xai_grok_version::ARCH_VERSION,
                 Style::default().fg(theme.gray),
-            ));
-            spans.push(Span::styled(
-                " Beta",
-                Style::default()
-                    .fg(theme.text_primary)
-                    .add_modifier(Modifier::BOLD),
             ));
         }
         VersionBadgeMode::HeroFooter => {
-            let channel_display = if channel.is_empty() {
-                "Beta"
-            } else {
-                channel.trim()
-            };
             spans.push(Span::styled(
-                channel_display,
+                "Arch Preview",
                 Style::default().fg(theme.gray),
             ));
         }
         VersionBadgeMode::HeroInline => {
             spans.push(Span::styled(
-                "Grok Build Beta  ",
+                "Arch Preview  ",
                 Style::default()
                     .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD),
             ));
             spans.push(Span::styled(
-                xai_grok_version::VERSION,
+                xai_grok_version::ARCH_VERSION,
                 Style::default().fg(theme.gray),
             ));
         }

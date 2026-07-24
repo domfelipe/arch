@@ -1035,7 +1035,9 @@ async fn run_agent_command(
     let is_leader = matches!(agent_args.mode, Some(AgentCmd::Leader(_)));
     if !is_stdio && !is_leader {
         eprintln!(
-            "Grok Build (pager) - v{}",
+            "{} {} (Grok Build engine {})",
+            xai_grok_version::ARCH_PRODUCT_NAME,
+            xai_grok_version::ARCH_VERSION,
             xai_grok_version::display_version_with_commit(
                 env!("VERSION_WITH_COMMIT"),
                 xai_grok_update::channel_label(),
@@ -1750,13 +1752,20 @@ async fn async_main() -> Result<()> {
             Command::Version { json } => {
                 if json {
                     let payload = serde_json::json!(
-                        { "currentVersion" : env!("VERSION_WITH_COMMIT"), "channel" :
-                        xai_grok_update::channel_name().unwrap_or("unknown"), }
+                        {
+                            "product": xai_grok_version::ARCH_PRODUCT_NAME,
+                            "archVersion": xai_grok_version::ARCH_VERSION,
+                            "currentVersion": env!("VERSION_WITH_COMMIT"),
+                            "engineVersion": env!("VERSION_WITH_COMMIT"),
+                            "channel": xai_grok_update::channel_name().unwrap_or("unknown"),
+                        }
                     );
                     println!("{}", serde_json::to_string(&payload)?);
                 } else {
                     println!(
-                        "grok {}",
+                        "{} {} (Grok Build engine {})",
+                        xai_grok_version::ARCH_CLI_NAME,
+                        xai_grok_version::ARCH_VERSION,
                         xai_grok_version::display_version_with_commit(
                             env!("VERSION_WITH_COMMIT"),
                             xai_grok_update::channel_label(),

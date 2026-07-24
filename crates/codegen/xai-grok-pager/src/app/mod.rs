@@ -1375,10 +1375,10 @@ pub(crate) fn set_terminal_title(title: &str) {
 fn terminal_title_string(title: &str) -> String {
     let sanitized: String = title.chars().filter(|c| !c.is_control()).collect();
     if sanitized.is_empty() {
-        "grok".into()
+        "Arch".into()
     } else {
-        let truncated: String = sanitized.chars().take(80 - 6).collect();
-        format!("{} - grok", truncated)
+        let truncated: String = sanitized.chars().take(80 - 7).collect();
+        format!("{} - Arch", truncated)
     }
 }
 fn set_panic_hook(mode: ScreenMode) {
@@ -1454,11 +1454,11 @@ mod tests {
     fn terminal_title_strips_control_characters() {
         assert_eq!(
             terminal_title_string("evil\x07\x1b]52;c;payload\x07title"),
-            "evil]52;c;payloadtitle - grok"
+            "evil]52;c;payloadtitle - Arch"
         );
-        assert_eq!(terminal_title_string("\x07\x1b\x00"), "grok");
-        assert_eq!(terminal_title_string(""), "grok");
-        assert_eq!(terminal_title_string("My chat"), "My chat - grok");
+        assert_eq!(terminal_title_string("\x07\x1b\x00"), "Arch");
+        assert_eq!(terminal_title_string(""), "Arch");
+        assert_eq!(terminal_title_string("My chat"), "My chat - Arch");
     }
     #[test]
     fn hunk_tracker_mode_nothing_set_is_none() {
@@ -1826,9 +1826,12 @@ mod tests {
         assert!(!args.no_alt_screen);
     }
     #[test]
-    fn cli_command_name_is_grok() {
+    fn cli_command_name_is_archcode() {
         use clap::CommandFactory;
-        assert_eq!(PagerArgs::command().get_name(), "grok");
+        assert_eq!(
+            PagerArgs::command().get_name(),
+            xai_grok_version::ARCH_CLI_NAME
+        );
     }
     #[test]
     fn cli_help_output_header() {
@@ -1838,9 +1841,9 @@ mod tests {
         assert_eq!(
             first_5,
             vec![
-                "Grok Build TUI",
+                "Arch terminal AI coding team",
                 "",
-                "Usage: grok [OPTIONS] [PROMPT] [COMMAND]",
+                "Usage: archcode [OPTIONS] [PROMPT] [COMMAND]",
                 "",
                 "Arguments:",
             ]

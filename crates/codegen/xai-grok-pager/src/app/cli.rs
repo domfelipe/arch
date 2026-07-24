@@ -7,9 +7,9 @@ use std::path::PathBuf;
 /// Top-level commands for the pager binary.
 #[derive(Debug, Clone, Subcommand)]
 pub enum Command {
-    /// Run Grok without the interactive UI
+    /// Run Arch without the interactive UI
     Agent(Box<AgentArgs>),
-    /// Show the configuration Grok discovers for this directory
+    /// Show the configuration Arch discovers for this directory
     Inspect {
         /// Emit machine-readable JSON output.
         #[arg(long)]
@@ -19,7 +19,7 @@ pub enum Command {
     Leader(LeaderMgmtArgs),
     /// Sign out and clear cached credentials
     Logout,
-    /// Sign in to Grok
+    /// Sign in to Arch
     Login {
         /// Ignored (kept for backwards compatibility). OAuth2 is now the only auth method.
         #[arg(long, hide = true)]
@@ -76,8 +76,8 @@ clipboard (containers, SSH) and your terminal does not handle OSC 52 itself
 sync with your window size.
 
 Examples:
-  grok wrap docker exec -it my-container bash
-  grok wrap kubectl exec -it my-pod -- bash
+  archcode wrap docker exec -it my-container bash
+  archcode wrap kubectl exec -it my-pod -- bash
 
 See ~/.grok/README.md for more information.
 ")]
@@ -403,14 +403,18 @@ fn version_with_channel() -> &'static str {
     static V: OnceLock<String> = OnceLock::new();
     V.get_or_init(|| {
         let label = xai_grok_update::channel_label();
-        xai_grok_version::display_version_with_commit(env!("VERSION_WITH_COMMIT"), label)
+        format!(
+            "{} (Grok Build engine {})",
+            xai_grok_version::ARCH_VERSION,
+            xai_grok_version::display_version_with_commit(env!("VERSION_WITH_COMMIT"), label)
+        )
     })
 }
 #[derive(Debug, Clone, Parser)]
 #[command(
-    name = "grok",
+    name = "archcode",
     version = version_with_channel(),
-    about = "Grok Build TUI",
+    about = "Arch terminal AI coding team",
     disable_version_flag = true,
     next_display_order = None,
     help_template = "\
@@ -736,7 +740,7 @@ pub struct PagerArgs {
     /// Run standalone even when leader mode is configured.
     #[arg(long, conflicts_with = "leader", hide = true)]
     pub no_leader: bool,
-    /// Initial prompt for the interactive session, e.g. `grok "fix the bug"` or `grok --worktree=feat "create this feature"`.
+    /// Initial prompt for the interactive session, e.g. `archcode "fix the bug"` or `archcode --worktree=feat "create this feature"`.
     #[arg(
         value_name = "PROMPT",
         conflicts_with_all = &["single",
@@ -778,8 +782,8 @@ impl PagerArgs {
             .map(std::path::Path::new)
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .filter(|n| *n == "grok" || *n == "agent")
-            .unwrap_or("grok")
+            .filter(|n| *n == xai_grok_version::ARCH_CLI_NAME || *n == "grok" || *n == "agent")
+            .unwrap_or(xai_grok_version::ARCH_CLI_NAME)
             .to_owned();
         let mut args = Self::parse_from(std::iter::once(bin_name).chain(std::env::args().skip(1)));
         if let Some(socket) = args.leader_socket.take() {
