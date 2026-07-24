@@ -1812,6 +1812,9 @@ impl Config {
     }
     /// Build an `AuthManager` with the configured proxy URL applied.
     pub fn create_auth_manager(&self) -> AuthManager {
+        // Pass default grok home so AuthManager can remap product auth to
+        // ~/.arch (see xai_grok_config::resolve_auth_json_path). Custom
+        // GROK_HOME test homes still keep auth under that home.
         AuthManager::new(
             &crate::util::grok_home::grok_home(),
             self.grok_com_config.clone(),

@@ -200,6 +200,18 @@ pub fn context_bar_line_for_session(
     theme: &Theme,
     gateway_chat: bool,
 ) -> Option<Line<'static>> {
+    context_bar_line_with_cost(used_tokens, total_tokens, hovered, theme, gateway_chat, None)
+}
+
+/// Context bar with optional Arch cost estimate (session model slug).
+pub fn context_bar_line_with_cost(
+    used_tokens: Option<u64>,
+    total_tokens: Option<u64>,
+    hovered: bool,
+    theme: &Theme,
+    gateway_chat: bool,
+    model_slug: Option<&str>,
+) -> Option<Line<'static>> {
     if gateway_chat {
         return None;
     }
@@ -210,6 +222,14 @@ pub fn context_bar_line_for_session(
     // Default form drives the line width: `used / total`, right-padded to the
     // minimum hover width so the two states always render at the same width.
     let mut token_str = format!("{} / {}", fmt_tokens(used), fmt_tokens(total));
+    // Arch: append estimated cost when a catalog price is known.
+    if let Some(slug) = model_slug {
+        let prices = crate::arch::pricing::prices_for_model(slug);
+        // Treat `used` as input-dominant estimate when breakdown is unavailable.
+        let cost = crate::arch::pricing::estimate_cost_usd(used, 0, 0, prices);
+        token_str.push_str(" · ");
+        token_str.push_str(&crate::arch::pricing::format_cost_label(cost));
+    }
     let natural_width = token_str.chars().count() as u16;
     let min_width = BAR_PCT_GAP + PCT_WIDTH;
     if natural_width < min_width {

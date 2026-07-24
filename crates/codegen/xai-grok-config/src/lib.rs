@@ -47,9 +47,10 @@ pub use managed_cache::{
     mark_managed_config_synced, mark_managed_config_synced_at, normalize_identity,
 };
 pub use paths::{
-    arch_home, claude_managed_settings_path, claude_managed_settings_probe_path,
-    decode_cwd_from_dirname, default_arch_home, default_grok_home, encode_cwd_dirname,
-    ensure_sessions_cwd_dir, grok_application, grok_application_in, grok_home, sessions_cwd_dir,
+    arch_home, auth_json_legacy_path, auth_json_primary_path, claude_managed_settings_path,
+    claude_managed_settings_probe_path, decode_cwd_from_dirname, default_arch_home,
+    default_grok_home, encode_cwd_dirname, ensure_sessions_cwd_dir, grok_application,
+    grok_application_in, grok_home, product_home, resolve_auth_json_path, sessions_cwd_dir,
     system_config_dir, user_arch_home, user_grok_home,
 };
 pub use validation::{

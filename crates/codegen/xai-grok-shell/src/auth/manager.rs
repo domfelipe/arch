@@ -285,9 +285,11 @@ impl AuthManager {
         // GROK_AUTH: inline JSON credentials (highest priority, read-only).
         if let Ok(inline_json) = std::env::var("GROK_AUTH") {
             if let Ok(auth) = serde_json::from_str::<GrokAuth>(&inline_json) {
+                // Write path still Arch product path when on default home.
+                let write_path = xai_grok_config::resolve_auth_json_path(grok_home);
                 return Self::assemble(
                     Some(auth),
-                    grok_home.join("auth.json"),
+                    write_path,
                     scope,
                     grok_com_config,
                     proxy_base_url,
@@ -297,10 +299,11 @@ impl AuthManager {
             tracing::warn!("GROK_AUTH set but failed to parse as JSON, falling back to file");
         }
 
-        // GROK_AUTH_PATH: custom file path (overrides default $GROK_HOME/auth.json).
-        let path = std::env::var("GROK_AUTH_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| grok_home.join("auth.json"));
+        // Primary write path: Arch `~/.arch/auth.json` on product home, else
+        // `{home}/auth.json` for tests / custom GROK_HOME. Explicit
+        // ARCH_AUTH_PATH / GROK_AUTH_PATH overrides win.
+        let path = xai_grok_config::resolve_auth_json_path(grok_home);
+        let legacy_path = xai_grok_config::auth_json_legacy_path();
 
         let (auth, auth_read_detail, initial_disk_state) = match read_auth_json(&path) {
             Ok(map) => {
@@ -342,6 +345,49 @@ impl AuthManager {
                     DiskAuthState::EntryMissing
                 };
                 (found, detail, state)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound && path != legacy_path => {
+                // Arch primary missing: one-time **read** fallback from legacy
+                // `~/.grok/auth.json`. Writes still target `path` (Arch home),
+                // so successful Arch login never re-anchors secrets on grok.
+                match read_auth_json(&legacy_path) {
+                    Ok(map) => {
+                        let found = lookup_auth(&map, &scope);
+                        let detail = serde_json::json!({
+                            "read": "ok_legacy",
+                            "resolved_path": path.display().to_string(),
+                            "legacy_path": legacy_path.display().to_string(),
+                            "scopes_on_disk": map.keys().collect::<Vec<_>>(),
+                            "target_scope": &scope,
+                            "found": found.is_some(),
+                            "auth_mode": found.as_ref().map(|a| format!("{:?}", a.auth_mode)),
+                            "is_expired": found.as_ref().map(is_expired),
+                            "key_prefix": found.as_ref().map(|a| token_suffix(&a.key).to_owned()),
+                        });
+                        let state = if found.is_some() {
+                            DiskAuthState::Ok
+                        } else {
+                            DiskAuthState::EntryMissing
+                        };
+                        (found, detail, state)
+                    }
+                    Err(le) => {
+                        let detail = serde_json::json!({
+                            "read": "error",
+                            "error": e.to_string(),
+                            "legacy_error": le.to_string(),
+                            "path": path.display().to_string(),
+                            "legacy_path": legacy_path.display().to_string(),
+                            "path_exists": path.exists(),
+                        });
+                        let state = if le.kind() == std::io::ErrorKind::NotFound {
+                            DiskAuthState::FileMissing
+                        } else {
+                            DiskAuthState::Unreadable
+                        };
+                        (None, detail, state)
+                    }
+                }
             }
             Err(e) => {
                 let detail = serde_json::json!({

@@ -182,7 +182,7 @@ impl WorktreeMode {
     /// Returns `(new_session_worktree_mode, fork_worktree_mode)`.
     ///
     /// Resolution order:
-    /// - `/new`: `new_session_worktree_mode` key, else legacy `worktree_mode`, else `Never` (no popup).
+    /// - `/new`: `new_session_worktree_mode` key, else legacy `worktree_mode`, else `Always` (Arch auto worktree).
     /// - `/fork`: `fork_worktree_mode` key, else legacy `worktree_mode`, else `Ask`.
     pub fn resolve_from_hints(hints: Option<&toml_edit::Item>) -> (Self, Self) {
         let get_str = |key: &str| -> Option<Self> {
@@ -201,9 +201,10 @@ impl WorktreeMode {
     }
     fn resolve_from_hint_strings(get_str: impl Fn(&str) -> Option<Self>) -> (Self, Self) {
         let legacy = get_str("worktree_mode");
+        // Arch default: auto worktree per task tab when in a git repo.
         let new_session = get_str("new_session_worktree_mode")
             .or(legacy)
-            .unwrap_or(Self::Never);
+            .unwrap_or(Self::Always);
         let fork = get_str("fork_worktree_mode")
             .or(legacy)
             .unwrap_or(Self::Ask);
@@ -977,7 +978,7 @@ pub struct AppView {
     /// dedup (macOS-only at the probe layer).
     pub clipboard_focus_tip: crate::tips::clipboard_focus::ClipboardFocusTipState,
     /// Persisted worktree preference for `/new`.
-    /// Defaults to [`WorktreeMode::Never`] (no popup).
+    /// Defaults to [`WorktreeMode::Always`] (Arch auto worktree per task).
     pub new_session_worktree_mode: WorktreeMode,
     /// Persisted worktree preference for `/fork`.
     /// Defaults to [`WorktreeMode::Ask`] (show popup).
@@ -1342,7 +1343,7 @@ impl AppView {
             small_screen_tip_evaluated: false,
             ssh_wrap_tip_evaluated: false,
             clipboard_focus_tip: Default::default(),
-            new_session_worktree_mode: WorktreeMode::Never,
+            new_session_worktree_mode: WorktreeMode::Always,
             fork_worktree_mode: WorktreeMode::Ask,
             restore_code: None,
             agent_override: None,
@@ -5368,7 +5369,7 @@ pub(crate) mod tests {
             small_screen_tip_evaluated: false,
             ssh_wrap_tip_evaluated: false,
             clipboard_focus_tip: Default::default(),
-            new_session_worktree_mode: WorktreeMode::Never,
+            new_session_worktree_mode: WorktreeMode::Always,
             fork_worktree_mode: WorktreeMode::Ask,
             restore_code: None,
             agent_override: None,
@@ -9170,7 +9171,8 @@ pub(crate) mod tests {
     fn resolve_from_hints_no_keys_returns_defaults() {
         let doc = parse_toml("");
         let (new_s, fork) = WorktreeMode::resolve_from_hints(doc.get("hints"));
-        assert_eq!(new_s, WorktreeMode::Never);
+        // Arch product default: automatic worktrees for new task tabs.
+        assert_eq!(new_s, WorktreeMode::Always);
         assert_eq!(fork, WorktreeMode::Ask);
     }
     #[test]

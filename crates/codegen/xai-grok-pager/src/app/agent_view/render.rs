@@ -1279,14 +1279,26 @@ impl AgentView {
             .as_ref()
             .and_then(|c| (c.total > 0).then_some(c.total))
             .or(model_window);
-        if let Some(ctx_line) = context_bar::context_bar_line_for_session(
+        let model_slug = self.session.models.current_model_id_str();
+        if let Some(ctx_line) = context_bar::context_bar_line_with_cost(
             ctx_used,
             ctx_total,
             self.hit_context.hovered,
             &theme,
             self.chat_kind,
+            model_slug,
         ) {
             status.push("context", ctx_line);
+        }
+        // Global Arch pet chrome (activity-driven).
+        {
+            let turn_running = !self.session.state.is_idle();
+            let pet = crate::arch::pet::pet_state_from_agent(turn_running, false);
+            let pet_line = Line::from(Span::styled(
+                crate::arch::pet::format_pet_chrome(pet),
+                Style::default().fg(theme.gray).bg(theme.bg_base),
+            ));
+            status.push("pet", pet_line);
         }
         let running = self.session.current_prompt_id.as_deref();
         let queue_len = self.session.queue_len()

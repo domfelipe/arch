@@ -93,6 +93,68 @@ pub fn user_arch_home() -> Option<PathBuf> {
     resolvable.then(arch_home)
 }
 
+/// Product primary home for Arch-owned secrets and new local state.
+///
+/// Currently `arch_home()` — auth credentials write here by default.
+pub fn product_home() -> PathBuf {
+    arch_home()
+}
+
+/// Primary `auth.json` path for Arch.
+///
+/// Resolution order:
+/// 1. `$ARCH_AUTH_PATH` or `$GROK_AUTH_PATH` (explicit file override)
+/// 2. `$ARCH_HOME/auth.json` / `~/.arch/auth.json` (product default)
+///
+/// Callers that pass an explicit non-default home (tests) should join
+/// `auth.json` themselves; see [`resolve_auth_json_path`].
+pub fn auth_json_primary_path() -> PathBuf {
+    if let Ok(p) = std::env::var("ARCH_AUTH_PATH") {
+        return PathBuf::from(p);
+    }
+    if let Ok(p) = std::env::var("GROK_AUTH_PATH") {
+        return PathBuf::from(p);
+    }
+    product_home().join("auth.json")
+}
+
+/// Legacy Grok auth path (`~/.grok/auth.json`) for **read-only** fallback.
+pub fn auth_json_legacy_path() -> PathBuf {
+    default_grok_home().join("auth.json")
+}
+
+/// Resolve the auth.json path for an AuthManager home directory.
+///
+/// - Explicit `$ARCH_AUTH_PATH` / `$GROK_AUTH_PATH` always wins.
+/// - When `home` is the default user grok home, Arch remaps writes to
+///   [`auth_json_primary_path`] (`~/.arch/auth.json`).
+/// - Otherwise (tests / custom `GROK_HOME`) keep `{home}/auth.json`.
+pub fn resolve_auth_json_path(home: &std::path::Path) -> PathBuf {
+    if let Ok(p) = std::env::var("ARCH_AUTH_PATH") {
+        return PathBuf::from(p);
+    }
+    if let Ok(p) = std::env::var("GROK_AUTH_PATH") {
+        return PathBuf::from(p);
+    }
+    let default_g = default_grok_home();
+    if paths_equal_lex(home, &default_g) {
+        auth_json_primary_path()
+    } else {
+        home.join("auth.json")
+    }
+}
+
+fn paths_equal_lex(a: &std::path::Path, b: &std::path::Path) -> bool {
+    if a == b {
+        return true;
+    }
+    // Compare canonical when possible so `/Users/x/.grok` vs symlink match.
+    match (dunce::canonicalize(a), dunce::canonicalize(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => false,
+    }
+}
+
 /// Canonical grok application path: `$GROK_HOME/bin/grok` (Unix) or `grok.exe` (Windows).
 pub fn grok_application() -> PathBuf {
     grok_application_in(&grok_home())
@@ -356,6 +418,44 @@ mod tests {
         let home = default_arch_home();
         assert!(!home.to_string_lossy().starts_with(r"\\?\"));
         assert!(home.ends_with(".arch"));
+    }
+
+    #[test]
+    fn auth_primary_under_arch_when_no_env_override() {
+        // Shape only — absolute HOME / ARCH_HOME may vary in CI.
+        let p = auth_json_primary_path();
+        assert!(
+            p.ends_with("auth.json"),
+            "primary auth path must end with auth.json: {p:?}"
+        );
+        let legacy = auth_json_legacy_path();
+        assert!(legacy.ends_with("auth.json"));
+        // Product primary is never the same path as legacy when defaults apply.
+        if std::env::var_os("ARCH_AUTH_PATH").is_none()
+            && std::env::var_os("GROK_AUTH_PATH").is_none()
+        {
+            assert_ne!(p, legacy, "Arch primary and Grok legacy auth paths must differ");
+        }
+    }
+
+    #[test]
+    fn resolve_auth_json_custom_home_stays_local() {
+        let custom = PathBuf::from("/tmp/arch-test-home-xyz");
+        let p = resolve_auth_json_path(&custom);
+        assert_eq!(p, custom.join("auth.json"));
+    }
+
+    #[test]
+    fn auth_write_simulation_under_custom_home_not_legacy() {
+        let home = tempfile::TempDir::new().expect("tempdir");
+        let path = resolve_auth_json_path(home.path());
+        assert_eq!(path, home.path().join("auth.json"));
+        std::fs::write(&path, "{}").expect("write auth");
+        assert!(path.exists());
+        assert!(
+            !home.path().join(".grok").exists(),
+            "Arch auth must not create ~/.grok under a custom home"
+        );
     }
 
     #[test]
