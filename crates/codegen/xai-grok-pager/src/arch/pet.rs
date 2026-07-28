@@ -1,7 +1,7 @@
-//! Global Arch pet chrome — monochrome braille **angel** sprites.
+//! Global Arch pet chrome — compact monochrome **angel-only** sprites.
 //!
-//! Source silhouette: `assets/arch/angel-gemini.svg` (Gemini angel).
-//! Status bar uses a 1-line glyph; multi-line sprites available for tests.
+//! Source: `assets/arch/angel-gemini.svg` with background fills stripped
+//! (no checker / flat gray). Rendered above the prompt, right-aligned.
 
 /// Activity-driven pet states for the always-on chrome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -23,49 +23,52 @@ impl PetState {
         }
     }
 
-    /// Compact braille angel for the status bar (halo + wings + body).
-    ///
-    /// Extracted/downscaled from the Gemini angel SVG silhouette.
+    /// Single-line glyph (short terminals / status fallback). No label text.
     pub fn glyph(self) -> &'static str {
         match self {
-            // calm: open wings
-            Self::Idle => "⣿⢟⣼",
-            // focused: tighter center
-            Self::Working => "⣿⢹⣏",
-            // celebrate: denser wing tips
-            Self::Happy => "⣿⣿⣧",
+            Self::Idle => "▄██▄",
+            Self::Working => "▄▀█▄",
+            Self::Happy => "▄██*",
         }
     }
 
-    /// Short label after the glyph.
+    /// Kept for API compatibility; chrome no longer shows labels.
     pub fn label(self) -> &'static str {
-        match self {
-            Self::Idle => "angel",
-            Self::Working => "busy",
-            Self::Happy => "yay",
-        }
+        ""
     }
 
-    /// Multi-line braille angel (downscaled from SVG silhouette).
+    /// Multi-line half-block angel silhouette (angel paths only, downscaled).
+    ///
+    /// 5 rows × ~7 cols — fits the band above the prompt when right-aligned.
     pub fn sprite(self) -> &'static [&'static str] {
         match self {
+            // halo · head · wings · body · feet
             Self::Idle => &[
-                "⣿⣿⢟⣼",
-                "⣿⢹⣏⣿",
-                "⣿⣿⣧⣿",
+                "  ▄▄▄  ",
+                " █████ ",
+                "▄█████▄",
+                "▀█████▀",
+                " ██▀▀  ",
             ],
             Self::Working => &[
-                "⣿⣿⢿⣵",
-                "⣽⢸⣏⣯",
-                "⢿⣿⠧⡿",
+                "  ▄▄▄  ",
+                " █▀█▀█ ",
+                "▄█████▄",
+                "▀█████▀",
+                " ██▀▀  ",
             ],
             Self::Happy => &[
-                "⣾⣿⢿⣽",
-                "⣿⢸⣏⣿",
-                "⢿⣿⣷⡿",
+                " *▄▄▄* ",
+                " █████ ",
+                "▄█████▄",
+                "▀█████▀",
+                " ██▀▀  ",
             ],
         }
     }
+
+    /// Preferred pet band height (rows).
+    pub const BAND_HEIGHT: u16 = 5;
 }
 
 /// Map session activity flags → pet state (pure, testable).
@@ -93,9 +96,9 @@ pub fn next_pet_state(prev: PetState, turn_running: bool, turn_just_ended: bool)
     PetState::Idle
 }
 
-/// Single-line chrome: `⣿⢟⣼ angel`.
+/// Single-line chrome — glyph only (no "angel" text).
 pub fn format_pet_chrome(state: PetState) -> String {
-    format!("{} {}", state.glyph(), state.label())
+    state.glyph().to_string()
 }
 
 /// Multi-line sprite joined with newlines.
@@ -124,27 +127,27 @@ mod tests {
     }
 
     #[test]
-    fn chrome_is_braille_angel() {
+    fn chrome_is_glyph_only_no_label_text() {
         let line = format_pet_chrome(PetState::Idle);
-        assert!(line.contains(PetState::Idle.glyph()));
-        assert!(line.contains("angel"));
-        // Braille block range U+2800–U+28FF
-        assert!(
-            line.chars().any(|c| ('\u{2800}'..='\u{28ff}').contains(&c)),
-            "expected braille in {line}"
-        );
+        assert_eq!(line, PetState::Idle.glyph());
+        assert!(!line.to_ascii_lowercase().contains("angel"));
+        assert!(!line.contains("busy"));
+        assert!(!line.contains("yay"));
+        assert!(line.contains('▄') || line.contains('█'));
     }
 
     #[test]
-    fn sprite_rows_are_braille() {
+    fn sprite_is_compact_half_blocks() {
         for s in [PetState::Idle, PetState::Working, PetState::Happy] {
             let rows = s.sprite();
-            assert!(rows.len() >= 3, "{s:?}");
+            assert_eq!(rows.len(), PetState::BAND_HEIGHT as usize, "{s:?}");
             for row in rows {
                 assert!(
-                    row.chars().any(|c| ('\u{2800}'..='\u{28ff}').contains(&c)),
-                    "{s:?} row not braille: {row}"
+                    row.chars()
+                        .any(|c| matches!(c, '█' | '▄' | '▀' | ' ' | '*')),
+                    "{s:?} unexpected chars: {row:?}"
                 );
+                assert!(row.chars().count() <= 8, "sprite too wide: {row:?}");
             }
         }
     }

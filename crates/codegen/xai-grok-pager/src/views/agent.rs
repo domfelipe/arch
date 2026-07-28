@@ -258,8 +258,8 @@ impl AgentViewLayout {
         let pet_height: u16 = if area.height <= SHORT_TERMINAL_ROWS || compact {
             0
         } else {
-            // Multi-line braille angel sprite (see arch::pet::PetState::sprite).
-            3
+            // Compact half-block angel (see arch::pet::PetState::BAND_HEIGHT).
+            crate::arch::pet::PetState::BAND_HEIGHT
         };
         if pet_height > 0 {
             constraints.push(Constraint::Length(pet_height));
@@ -1904,7 +1904,7 @@ mod tests {
     fn pet_band_sits_directly_above_prompt() {
         let area = Rect::new(0, 0, 80, 40);
         let layout = layout_with_rows(area, 0, 0, 0);
-        assert_eq!(layout.pet.height, 3);
+        assert_eq!(layout.pet.height, crate::arch::pet::PetState::BAND_HEIGHT);
         assert_eq!(layout.prompt.y, layout.pet.y + layout.pet.height);
         assert_eq!(layout.pet.x, layout.prompt.x);
     }

@@ -2078,10 +2078,10 @@ impl AgentView {
             }
         }
         self.draw_plugin_cta(buf, layout.plugin_cta, &theme);
-        // Arch pet companion — directly above the typing box (Claude Code style).
+        // Arch pet companion — above the typing box, right-aligned (no label).
         if layout.pet.height > 0 && layout.pet.width > 0 {
             use crate::arch::pet::{PetState, format_pet_chrome, pet_state_from_agent};
-            use unicode_width::UnicodeWidthChar;
+            use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
             let turn_running = !self.session.state.is_idle();
             let pet = pet_state_from_agent(turn_running, false);
             let pet_fg = match pet {
@@ -2101,11 +2101,10 @@ impl AgentView {
                     }
                 }
             }
-            let content_x = pet_area.x + layout_cfg.block_pad_left;
+            let pad_r = layout_cfg.block_pad_right;
             let max_w = pet_area
                 .width
-                .saturating_sub(layout_cfg.block_pad_left + layout_cfg.block_pad_right)
-                as usize;
+                .saturating_sub(layout_cfg.block_pad_left + pad_r) as usize;
             let style = Style::default().fg(pet_fg).bg(bg);
             let truncate = |line: &str| -> String {
                 let mut out = String::new();
@@ -2120,29 +2119,22 @@ impl AgentView {
                 }
                 out
             };
+            let right_x = |line: &str| -> u16 {
+                let w = UnicodeWidthStr::width(line) as u16;
+                pet_area
+                    .x
+                    .saturating_add(pet_area.width.saturating_sub(pad_r.saturating_add(w)))
+            };
             if pet_area.height >= 3 {
-                // Multi-line braille angel sprite + short label on the last row.
+                // Compact half-block angel only (no "angel" text), right side.
                 let rows = pet.sprite();
                 for (i, row) in rows.iter().take(pet_area.height as usize).enumerate() {
-                    let mut line = (*row).to_string();
-                    if i + 1 == rows.len().min(pet_area.height as usize) {
-                        line = format!("{line}  {}", pet.label());
-                    }
-                    buf.set_string(
-                        content_x,
-                        pet_area.y + i as u16,
-                        &truncate(&line),
-                        style,
-                    );
+                    let line = truncate(row);
+                    buf.set_string(right_x(&line), pet_area.y + i as u16, &line, style);
                 }
             } else {
-                // Single-line fallback (short / compact terminals).
-                buf.set_string(
-                    content_x,
-                    pet_area.y,
-                    &truncate(&format_pet_chrome(pet)),
-                    style,
-                );
+                let line = truncate(&format_pet_chrome(pet));
+                buf.set_string(right_x(&line), pet_area.y, &line, style);
             }
         }
         if voice_listening && layout.voice_recording.height > 0 && layout.voice_recording.width > 0
