@@ -1290,22 +1290,6 @@ impl AgentView {
         ) {
             status.push("context", ctx_line);
         }
-        // Global Arch angel chrome (activity-driven ASCII).
-        {
-            use crate::arch::pet::{PetState, format_pet_chrome, pet_state_from_agent};
-            let turn_running = !self.session.state.is_idle();
-            let pet = pet_state_from_agent(turn_running, false);
-            let pet_fg = match pet {
-                PetState::Idle => theme.gray_bright,
-                PetState::Working => theme.accent_running,
-                PetState::Happy => theme.accent_success,
-            };
-            let pet_line = Line::from(Span::styled(
-                format_pet_chrome(pet),
-                Style::default().fg(pet_fg).bg(theme.bg_base),
-            ));
-            status.push("pet", pet_line);
-        }
         let running = self.session.current_prompt_id.as_deref();
         let queue_len = self.session.queue_len()
             + self
@@ -2094,6 +2078,73 @@ impl AgentView {
             }
         }
         self.draw_plugin_cta(buf, layout.plugin_cta, &theme);
+        // Arch pet companion — directly above the typing box (Claude Code style).
+        if layout.pet.height > 0 && layout.pet.width > 0 {
+            use crate::arch::pet::{PetState, format_pet_chrome, pet_state_from_agent};
+            use unicode_width::UnicodeWidthChar;
+            let turn_running = !self.session.state.is_idle();
+            let pet = pet_state_from_agent(turn_running, false);
+            let pet_fg = match pet {
+                PetState::Idle => theme.gray_bright,
+                PetState::Working => theme.accent_running,
+                PetState::Happy => theme.accent_success,
+            };
+            let bg = theme.bg_base;
+            let pet_area = layout.pet;
+            // Clear the pet band.
+            for row in 0..pet_area.height {
+                for col in 0..pet_area.width {
+                    if let Some(cell) = buf.cell_mut((pet_area.x + col, pet_area.y + row)) {
+                        cell.set_char(' ');
+                        cell.fg = bg;
+                        cell.bg = bg;
+                    }
+                }
+            }
+            let content_x = pet_area.x + layout_cfg.block_pad_left;
+            let max_w = pet_area
+                .width
+                .saturating_sub(layout_cfg.block_pad_left + layout_cfg.block_pad_right)
+                as usize;
+            let style = Style::default().fg(pet_fg).bg(bg);
+            let truncate = |line: &str| -> String {
+                let mut out = String::new();
+                let mut w = 0usize;
+                for ch in line.chars() {
+                    let cw = ch.width().unwrap_or(0);
+                    if w + cw > max_w {
+                        break;
+                    }
+                    out.push(ch);
+                    w += cw;
+                }
+                out
+            };
+            if pet_area.height >= 3 {
+                // Multi-line braille angel sprite + short label on the last row.
+                let rows = pet.sprite();
+                for (i, row) in rows.iter().take(pet_area.height as usize).enumerate() {
+                    let mut line = (*row).to_string();
+                    if i + 1 == rows.len().min(pet_area.height as usize) {
+                        line = format!("{line}  {}", pet.label());
+                    }
+                    buf.set_string(
+                        content_x,
+                        pet_area.y + i as u16,
+                        &truncate(&line),
+                        style,
+                    );
+                }
+            } else {
+                // Single-line fallback (short / compact terminals).
+                buf.set_string(
+                    content_x,
+                    pet_area.y,
+                    &truncate(&format_pet_chrome(pet)),
+                    style,
+                );
+            }
+        }
         if voice_listening && layout.voice_recording.height > 0 && layout.voice_recording.width > 0
         {
             let rec_area = layout.voice_recording;
@@ -3255,6 +3306,8 @@ impl AgentView {
                 layout.turn_status.y
             } else if layout.voice_recording.height > 0 {
                 layout.voice_recording.y
+            } else if layout.pet.height > 0 {
+                layout.pet.y
             } else {
                 layout.prompt.y
             };

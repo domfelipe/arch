@@ -121,6 +121,9 @@ pub struct AgentViewLayout {
     /// Single-row record indicator ("◉ Recording") directly above the prompt,
     /// shown only while voice capture is active.
     pub voice_recording: Rect,
+    /// Arch pet (angel) chrome directly above the typing box — Claude Code-style
+    /// companion row(s). Empty when height is 0 (short terminals / compact).
+    pub pet: Rect,
     pub prompt: Rect,
     pub shortcuts: Rect,
     /// Scrollback area narrowed for scrollbar (content rendering uses this).
@@ -250,6 +253,17 @@ impl AgentViewLayout {
         if voice_recording_height > 0 {
             constraints.push(Constraint::Length(voice_recording_height));
         }
+        // Always-on Arch pet above the prompt (like Claude Code's companion line).
+        // Suppress on short terminals so scrollback/prompt keep room.
+        let pet_height: u16 = if area.height <= SHORT_TERMINAL_ROWS || compact {
+            0
+        } else {
+            // Multi-line braille angel sprite (see arch::pet::PetState::sprite).
+            3
+        };
+        if pet_height > 0 {
+            constraints.push(Constraint::Length(pet_height));
+        }
         constraints.push(Constraint::Length(prompt_height));
         let shortcuts_gap = if bottom_vpad == 0 { 0u16 } else { 1 };
         if shortcuts_gap > 0 {
@@ -352,6 +366,13 @@ impl AgentViewLayout {
         } else {
             Rect::default()
         };
+        let pet = if pet_height > 0 {
+            let r = chunks[i];
+            i += 1;
+            r
+        } else {
+            Rect::default()
+        };
         let prompt = chunks[i];
         i += 1;
         if shortcuts_gap > 0 {
@@ -393,6 +414,7 @@ impl AgentViewLayout {
             plugin_cta,
             follow_ups,
             voice_recording,
+            pet,
             prompt,
             shortcuts,
             scrollback_content,
@@ -1868,8 +1890,30 @@ mod tests {
         let area = Rect::new(0, 0, 80, 40);
         let layout = layout_with_rows(area, 1, 0, 0);
         assert_eq!(layout.banner.height, 1);
-        assert_eq!(layout.prompt.y, layout.banner.y + 1);
+        // Pet companion sits between banner stack and the prompt (Claude-style).
+        assert!(
+            layout.pet.height > 0,
+            "pet band expected on tall terminals"
+        );
+        assert_eq!(layout.pet.y, layout.banner.y + layout.banner.height);
+        assert_eq!(layout.prompt.y, layout.pet.y + layout.pet.height);
         assert!(layout.banner.y >= layout.scrollback.y + layout.scrollback.height);
+    }
+
+    #[test]
+    fn pet_band_sits_directly_above_prompt() {
+        let area = Rect::new(0, 0, 80, 40);
+        let layout = layout_with_rows(area, 0, 0, 0);
+        assert_eq!(layout.pet.height, 3);
+        assert_eq!(layout.prompt.y, layout.pet.y + layout.pet.height);
+        assert_eq!(layout.pet.x, layout.prompt.x);
+    }
+
+    #[test]
+    fn pet_band_suppressed_on_short_terminal() {
+        let area = Rect::new(0, 0, 80, SHORT_TERMINAL_ROWS);
+        let layout = layout_with_rows(area, 0, 0, 0);
+        assert_eq!(layout.pet, Rect::default());
     }
     #[test]
     fn banner_row_absent_when_height_zero() {
