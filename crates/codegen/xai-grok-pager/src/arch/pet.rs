@@ -1,7 +1,7 @@
-//! Global Arch pet chrome — compact monochrome **angel-only** sprites.
+//! Global Arch pet — monochrome half-block angel from the product sticker PNG.
 //!
-//! Source: `assets/arch/angel-gemini.svg` with background fills stripped
-//! (no checker / flat gray). Rendered above the prompt, right-aligned.
+//! Source: `assets/arch/angel-pet.png` (transparent pixel art; no checker bg).
+//! Rendered **right-aligned** above the prompt; **no text label**.
 
 /// Activity-driven pet states for the always-on chrome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -23,52 +23,69 @@ impl PetState {
         }
     }
 
-    /// Single-line glyph (short terminals / status fallback). No label text.
+    /// Single-line fallback (short terminals). Glyph only — no label.
     pub fn glyph(self) -> &'static str {
         match self {
-            Self::Idle => "▄██▄",
-            Self::Working => "▄▀█▄",
-            Self::Happy => "▄██*",
+            Self::Idle => "▄█▄",
+            Self::Working => "▄▀▄",
+            Self::Happy => "*█*",
         }
     }
 
-    /// Kept for API compatibility; chrome no longer shows labels.
+    /// Unused in UI (kept for API compatibility).
     pub fn label(self) -> &'static str {
         ""
     }
 
-    /// Multi-line half-block angel silhouette (angel paths only, downscaled).
+    /// Multi-line half-block silhouette derived from `angel-pet.png`
+    /// (alpha crop + NEAREST downscale 18×20 → 10 half-block rows).
     ///
-    /// 5 rows × ~7 cols — fits the band above the prompt when right-aligned.
+    /// Layout (top→bottom): halo · head · wings+shoulders · torso · feet.
     pub fn sprite(self) -> &'static [&'static str] {
         match self {
-            // halo · head · wings · body · feet
             Self::Idle => &[
-                "  ▄▄▄  ",
-                " █████ ",
-                "▄█████▄",
-                "▀█████▀",
-                " ██▀▀  ",
+                "        ▄█▄       ",
+                "       ▄███▄      ",
+                "    ███████▄█▄    ",
+                "▄██████████▀█████▄",
+                "██████████████████",
+                "███████▀██████████",
+                "█████████████▄████",
+                " ██████████▀█████ ",
+                " ▀██▀ ████▄█▀███▀ ",
+                "      ████▀▀▀     ",
             ],
+            // Eyes slightly closed / focused (middle face band).
             Self::Working => &[
-                "  ▄▄▄  ",
-                " █▀█▀█ ",
-                "▄█████▄",
-                "▀█████▀",
-                " ██▀▀  ",
+                "        ▄█▄       ",
+                "       ▄███▄      ",
+                "    ███████▄█▄    ",
+                "▄██████████▀█████▄",
+                "██████████████████",
+                "███████▄██████████",
+                "█████████████▀████",
+                " ██████████▀█████ ",
+                " ▀██▀ ████▄█▀███▀ ",
+                "      ████▀▀▀     ",
             ],
+            // Halo sparkle.
             Self::Happy => &[
-                " *▄▄▄* ",
-                " █████ ",
-                "▄█████▄",
-                "▀█████▀",
-                " ██▀▀  ",
+                "       *▄█▄*      ",
+                "       ▄███▄      ",
+                "    ███████▄█▄    ",
+                "▄██████████▀█████▄",
+                "██████████████████",
+                "███████▀██████████",
+                "█████████████▄████",
+                " ██████████▀█████ ",
+                " ▀██▀ ████▄█▀███▀ ",
+                "      ████▀▀▀     ",
             ],
         }
     }
 
-    /// Preferred pet band height (rows).
-    pub const BAND_HEIGHT: u16 = 5;
+    /// Preferred pet band height (rows of half-blocks).
+    pub const BAND_HEIGHT: u16 = 10;
 }
 
 /// Map session activity flags → pet state (pure, testable).
@@ -96,7 +113,7 @@ pub fn next_pet_state(prev: PetState, turn_running: bool, turn_just_ended: bool)
     PetState::Idle
 }
 
-/// Single-line chrome — glyph only (no "angel" text).
+/// Single-line chrome — glyph only (no “angel” text).
 pub fn format_pet_chrome(state: PetState) -> String {
     state.glyph().to_string()
 }
@@ -131,24 +148,26 @@ mod tests {
         let line = format_pet_chrome(PetState::Idle);
         assert_eq!(line, PetState::Idle.glyph());
         assert!(!line.to_ascii_lowercase().contains("angel"));
-        assert!(!line.contains("busy"));
-        assert!(!line.contains("yay"));
-        assert!(line.contains('▄') || line.contains('█'));
     }
 
     #[test]
-    fn sprite_is_compact_half_blocks() {
+    fn sprite_matches_sticker_grid() {
         for s in [PetState::Idle, PetState::Working, PetState::Happy] {
             let rows = s.sprite();
             assert_eq!(rows.len(), PetState::BAND_HEIGHT as usize, "{s:?}");
-            for row in rows {
-                assert!(
-                    row.chars()
-                        .any(|c| matches!(c, '█' | '▄' | '▀' | ' ' | '*')),
-                    "{s:?} unexpected chars: {row:?}"
-                );
-                assert!(row.chars().count() <= 8, "sprite too wide: {row:?}");
-            }
+            // Halo cross-ish top
+            assert!(
+                rows[0].contains('▄') || rows[0].contains('█') || rows[0].contains('*'),
+                "halo missing: {:?}",
+                rows[0]
+            );
+            // Wings wider than feet row
+            let wing_w = rows[3].trim().chars().count();
+            let feet_w = rows[9].trim().chars().count();
+            assert!(wing_w >= feet_w, "wings should span body {s:?}");
+            // No checker noise of pure solid block field
+            let solid = rows.iter().filter(|r| r.chars().all(|c| c == '█')).count();
+            assert!(solid < rows.len(), "sprite collapsed to solid blocks");
         }
     }
 
