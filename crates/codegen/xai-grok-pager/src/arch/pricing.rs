@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn catalog_covers_router_slugs() {
-        for slug in ["grok-3-mini", "grok-3", "grok-4", "grok-2-vision"] {
+        for slug in ["grok-3-mini", "grok-3", "grok-4", "grok-4.5", "grok-2-vision"] {
             assert!(
                 prices_for_model(slug).is_some(),
                 "missing price for {slug}"

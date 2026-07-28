@@ -45,6 +45,11 @@ const THEME_CHOICES: &[EnumChoice] = &[
         description: "Follow system dark/light appearance.",
     },
     EnumChoice {
+        canonical: "arch",
+        display: "Arch",
+        description: "Indigo night with gold halo accents (Arch product).",
+    },
+    EnumChoice {
         canonical: "groknight",
         display: "Grok Night",
         description: "Neutral dark with magenta accent.",
@@ -474,6 +479,11 @@ const VOICE_STT_LANGUAGE_CHOICES: &[EnumChoice] = &[
 /// `auto_dark_theme` and `auto_light_theme`. No dark/light filtering —
 /// the user can pair any theme with any system-appearance bucket.
 const CONCRETE_THEME_CHOICES: &[EnumChoice] = &[
+    EnumChoice {
+        canonical: "arch",
+        display: "Arch",
+        description: "Indigo night with gold halo accents (Arch product).",
+    },
     EnumChoice {
         canonical: "groknight",
         display: "Grok Night",

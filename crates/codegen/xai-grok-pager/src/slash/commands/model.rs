@@ -23,7 +23,7 @@ impl SlashCommand for ModelCommand {
     }
 
     fn description(&self) -> &str {
-        "Switch the active model"
+        "Switch model from the live catalog (Ctrl+M); OpenAI/Anthropic need a proxy"
     }
 
     fn session_scoped(&self) -> bool {

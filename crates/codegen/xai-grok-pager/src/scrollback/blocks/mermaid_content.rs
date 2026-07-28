@@ -831,6 +831,7 @@ mod tests {
             "GrokDay is the light theme"
         );
         for dark in [
+            ThemeKind::Arch,
             ThemeKind::GrokNight,
             ThemeKind::TokyoNight,
             ThemeKind::RosePineMoon,

@@ -1290,13 +1290,19 @@ impl AgentView {
         ) {
             status.push("context", ctx_line);
         }
-        // Global Arch pet chrome (activity-driven).
+        // Global Arch angel chrome (activity-driven ASCII).
         {
+            use crate::arch::pet::{PetState, format_pet_chrome, pet_state_from_agent};
             let turn_running = !self.session.state.is_idle();
-            let pet = crate::arch::pet::pet_state_from_agent(turn_running, false);
+            let pet = pet_state_from_agent(turn_running, false);
+            let pet_fg = match pet {
+                PetState::Idle => theme.gray_bright,
+                PetState::Working => theme.accent_running,
+                PetState::Happy => theme.accent_success,
+            };
             let pet_line = Line::from(Span::styled(
-                crate::arch::pet::format_pet_chrome(pet),
-                Style::default().fg(theme.gray).bg(theme.bg_base),
+                format_pet_chrome(pet),
+                Style::default().fg(pet_fg).bg(theme.bg_base),
             ));
             status.push("pet", pet_line);
         }

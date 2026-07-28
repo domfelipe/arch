@@ -47,6 +47,7 @@ fn theme_kind_from_u8(byte: u8) -> ThemeKind {
         x if x == ThemeKind::TokyoNight as u8 => ThemeKind::TokyoNight,
         x if x == ThemeKind::RosePineMoon as u8 => ThemeKind::RosePineMoon,
         x if x == ThemeKind::OscuraMidnight as u8 => ThemeKind::OscuraMidnight,
+        x if x == ThemeKind::Arch as u8 => ThemeKind::Arch,
         x if x == ThemeKind::Auto as u8 => ThemeKind::Auto,
         _ => ThemeKind::GrokNight,
     }
@@ -190,8 +191,29 @@ fn resolve_from_config(config_theme: Option<ThemeKind>, osc11_fallback: bool) ->
         return kind;
     }
 
-    // Default: GrokNight
-    ThemeKind::GrokNight
+    // Default: Arch product when the CLI is `archcode`, else GrokNight.
+    product_default_theme()
+}
+
+/// `archcode` (and ARCH_PRODUCT) default to the Arch theme; tests/other bins
+/// keep GrokNight so existing theme contracts stay stable.
+fn product_default_theme() -> ThemeKind {
+    let is_arch = std::env::var_os("ARCH_PRODUCT").is_some()
+        || std::env::args()
+            .next()
+            .map(|a| {
+                let b = std::path::Path::new(&a)
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(a.as_str());
+                b == "archcode" || b.starts_with("archcode-")
+            })
+            .unwrap_or(false);
+    if is_arch {
+        ThemeKind::Arch
+    } else {
+        ThemeKind::GrokNight
+    }
 }
 
 /// Map an optional appearance detection result to a concrete `ThemeKind`.

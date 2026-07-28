@@ -10,6 +10,7 @@
 //! capability level via [`Theme::quantized`]. Runtime-generated colors (syntax
 //! highlighting, blending) are also quantized via [`color_support::quantize`].
 
+mod arch;
 pub mod cache;
 pub mod color_support;
 mod grokday;
@@ -33,6 +34,8 @@ pub enum ThemeKind {
     TokyoNight = 2,
     RosePineMoon = 3,
     OscuraMidnight = 5,
+    /// Arch product theme — indigo night + gold halo accents.
+    Arch = 6,
     /// Meta-variant: follow system dark/light appearance.
     ///
     /// Never stored in `cache::CURRENT` — resolved to a concrete
@@ -46,6 +49,7 @@ pub enum ThemeKind {
 impl ThemeKind {
     /// All theme kinds (including those that may not work on the current terminal).
     pub const ALL: &[ThemeKind] = &[
+        ThemeKind::Arch,
         ThemeKind::GrokNight,
         ThemeKind::GrokDay,
         ThemeKind::TokyoNight,
@@ -61,7 +65,8 @@ impl ThemeKind {
         // Two possible results — pick the right const slice based on
         // the detected color level. No heap allocation needed.
         const ALL: &[ThemeKind] = ThemeKind::ALL;
-        const NO_TRUECOLOR: &[ThemeKind] = &[ThemeKind::GrokNight, ThemeKind::GrokDay];
+        const NO_TRUECOLOR: &[ThemeKind] =
+            &[ThemeKind::Arch, ThemeKind::GrokNight, ThemeKind::GrokDay];
 
         if color_support::detect().has_truecolor() {
             ALL
@@ -73,6 +78,7 @@ impl ThemeKind {
     /// Human-readable display name.
     pub fn display_name(self) -> &'static str {
         match self {
+            Self::Arch => "arch",
             Self::GrokNight => "groknight",
             Self::TokyoNight => "tokyonight",
             Self::GrokDay => "grokday",
@@ -85,10 +91,11 @@ impl ThemeKind {
     /// Whether this theme requires truecolor (24-bit RGB) to look correct.
     ///
     /// TokyoNight uses blue-tinted backgrounds that lose their character
-    /// when quantized to 256 or 16 colors. GrokNight uses neutral grays
-    /// that survive quantization cleanly.
+    /// when quantized to 256 or 16 colors. GrokNight / Arch use neutral
+    /// bases that survive quantization cleanly.
     pub fn requires_truecolor(self) -> bool {
         match self {
+            Self::Arch => false,
             Self::GrokNight => false,
             Self::TokyoNight => true,
             Self::GrokDay => false,
@@ -105,6 +112,7 @@ impl ThemeKind {
         let lower = name.to_lowercase();
         match lower.as_str() {
             "auto" | "system" => Some(Self::Auto),
+            "arch" | "angel" | "arch-night" => Some(Self::Arch),
             "groknight" | "grok-night" | "dark" => Some(Self::GrokNight),
             "tokyonight" | "tokyo-night" | "tokyo" => Some(Self::TokyoNight),
             "grokday" | "grok-day" | "light" | "day" => Some(Self::GrokDay),
@@ -143,6 +151,7 @@ pub fn canonical_name(value: &str) -> Option<&'static str> {
 pub fn display_name_for_canonical(value: &str) -> &str {
     match value {
         "auto" => "Auto",
+        "arch" => "Arch",
         "groknight" => "Grok Night",
         "grokday" => "Grok Day",
         "tokyonight" => "Tokyo Night",
@@ -270,14 +279,15 @@ impl Theme {
             return Self::terminal_default().quantized(level);
         }
         let base = match cache::current_kind() {
+            ThemeKind::Arch => Self::arch(),
             ThemeKind::GrokNight => Self::groknight(),
             ThemeKind::TokyoNight => Self::tokyonight(),
             ThemeKind::GrokDay => Self::grokday(),
             ThemeKind::RosePineMoon => Self::rosepine_moon(),
             ThemeKind::OscuraMidnight => Self::oscura_midnight(),
             // Auto is resolved to a concrete theme before being stored;
-            // if reached, fall back to GrokNight.
-            ThemeKind::Auto => Self::groknight(),
+            // if reached, fall back to product default.
+            ThemeKind::Auto => Self::arch(),
         };
         // Sample polarity pre-quantization — post-quantize `bg_base` may
         // land on a named/indexed entry whose luminance is host-palette-
@@ -980,6 +990,7 @@ mod tests {
         };
         for &kind in ThemeKind::ALL {
             let theme = match kind {
+                ThemeKind::Arch => Theme::arch(),
                 ThemeKind::GrokNight => Theme::groknight(),
                 ThemeKind::GrokDay => Theme::grokday(),
                 ThemeKind::TokyoNight => Theme::tokyonight(),

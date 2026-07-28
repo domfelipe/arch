@@ -44,12 +44,36 @@ impl ModelProfile {
     }
 
     /// Canonical model slug family for this profile (testable fixed map).
+    /// Prefer resolving via [`resolve_profile_slug`] against the live catalog.
     pub fn model_slug(self) -> &'static str {
         match self {
             Self::Fast => "grok-3-mini",
-            Self::Balanced => "grok-3",
+            Self::Balanced => "grok-4",
             Self::Deep => "grok-4",
             Self::Vision => "grok-2-vision",
+        }
+    }
+
+    /// Preferential id/name candidates for matching the live `/models` catalog.
+    /// First hit wins (case-insensitive contains on id or display name).
+    pub fn catalog_candidates(self) -> &'static [&'static str] {
+        match self {
+            Self::Fast => &[
+                "grok-3-mini",
+                "grok-mini",
+                "mini",
+                "fast",
+                "code-fast",
+            ],
+            Self::Balanced => &["grok-4", "grok-4.5", "grok-3", "grok", "balanced"],
+            Self::Deep => &[
+                "grok-4.5",
+                "grok-4",
+                "heavy",
+                "reasoning",
+                "deep",
+            ],
+            Self::Vision => &["vision", "grok-2-vision", "image", "multimodal"],
         }
     }
 
@@ -116,6 +140,37 @@ pub fn route(mode: &ModelMode, prompt: &str) -> RouteDecision {
             d
         }
     }
+}
+
+/// Pick the best catalog model id for a profile.
+///
+/// `catalog` entries are `(id, display_name)` pairs from the agent model list.
+/// Falls back to [`ModelProfile::model_slug`] when the catalog is empty or no
+/// candidate matches — callers should still surface a clear error if the
+/// session catalog later rejects the id.
+pub fn resolve_profile_slug<'a>(
+    profile: ModelProfile,
+    catalog: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> String {
+    let catalog: Vec<(&str, &str)> = catalog.into_iter().collect();
+    if catalog.is_empty() {
+        return profile.model_slug().to_string();
+    }
+    for cand in profile.catalog_candidates() {
+        let c = cand.to_ascii_lowercase();
+        if let Some((id, _)) = catalog.iter().find(|(id, name)| {
+            let id_l = id.to_ascii_lowercase();
+            let name_l = name.to_ascii_lowercase();
+            id_l == c
+                || name_l == c
+                || id_l.contains(&c)
+                || name_l.contains(&c)
+        }) {
+            return (*id).to_string();
+        }
+    }
+    // Last resort: keep canonical slug (may fail server-side; better than silent wrong).
+    profile.model_slug().to_string()
 }
 
 /// Fixed, testable Auto routing rules over prompt/task text.
@@ -217,6 +272,36 @@ mod tests {
         assert_eq!(d.mode, "exact");
         assert_eq!(d.model_slug, "custom-slug-xyz");
         assert_eq!(d.reasoning, ReasoningChoice::XHigh);
+    }
+
+    #[test]
+    fn resolve_profile_slug_picks_catalog_match() {
+        let catalog = [
+            ("grok-3-mini-id", "Grok 3 Mini"),
+            ("grok-4.5-id", "Grok 4.5"),
+            ("vision-id", "Grok 2 Vision"),
+        ];
+        assert_eq!(
+            resolve_profile_slug(ModelProfile::Fast, catalog),
+            "grok-3-mini-id"
+        );
+        assert_eq!(
+            resolve_profile_slug(ModelProfile::Deep, catalog),
+            "grok-4.5-id"
+        );
+        assert_eq!(
+            resolve_profile_slug(ModelProfile::Vision, catalog),
+            "vision-id"
+        );
+    }
+
+    #[test]
+    fn resolve_profile_slug_empty_catalog_falls_back() {
+        let empty: [(&str, &str); 0] = [];
+        assert_eq!(
+            resolve_profile_slug(ModelProfile::Balanced, empty),
+            ModelProfile::Balanced.model_slug()
+        );
     }
 
     #[test]

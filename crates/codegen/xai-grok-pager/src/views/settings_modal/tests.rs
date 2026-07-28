@@ -6675,6 +6675,7 @@ fn max_thoughts_width_preview_title_styling_distinguishes_from_content() {
     // raw theme directly so this assertion survives `NO_COLOR`
     // / 256-color quantization.
     let raw_theme = match crate::theme::Theme::current_kind() {
+        crate::theme::ThemeKind::Arch => crate::theme::Theme::arch(),
         crate::theme::ThemeKind::GrokNight => crate::theme::Theme::groknight(),
         crate::theme::ThemeKind::TokyoNight => crate::theme::Theme::tokyonight(),
         crate::theme::ThemeKind::GrokDay => crate::theme::Theme::grokday(),
@@ -6682,7 +6683,7 @@ fn max_thoughts_width_preview_title_styling_distinguishes_from_content() {
         // Resolved via `Theme::current()` rather than a constructor
         // because `theme::oscura` is a private module.
         crate::theme::ThemeKind::OscuraMidnight => crate::theme::Theme::current(),
-        crate::theme::ThemeKind::Auto => crate::theme::Theme::groknight(),
+        crate::theme::ThemeKind::Auto => crate::theme::Theme::arch(),
     };
     assert_ne!(
         raw_theme.bg_visual, raw_theme.bg_highlight,
