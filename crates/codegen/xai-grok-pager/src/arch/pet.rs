@@ -1,8 +1,7 @@
-//! Global Arch pet — hand-tuned monochrome half-block angel.
+//! Global Arch pet — braille **wings** matching the welcome logo art.
 //!
-//! Derived from `assets/arch/angel-pet.png` (pixel sticker): cross halo,
-//! head, wide wings, torso, feet. Outline-style so wings read as wings,
-//! not a solid blob. Right-aligned above the prompt; no text label.
+//! Same style as `assets/logo/logo05.txt` (compact welcome wings), right-aligned
+//! above the prompt. No text label.
 
 /// Activity-driven pet states for the always-on chrome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -24,12 +23,12 @@ impl PetState {
         }
     }
 
-    /// Single-line fallback (short terminals). Glyph only.
+    /// Single-line fallback — wing tips from the logo style.
     pub fn glyph(self) -> &'static str {
         match self {
-            Self::Idle => "▄█▄",
-            Self::Working => "▄▀▄",
-            Self::Happy => "*█*",
+            Self::Idle => "⠰⣶⣿⣶⠆",
+            Self::Working => "⠰⣿⣿⣿⠆",
+            Self::Happy => "⠰⣶*⣶⠆",
         }
     }
 
@@ -38,68 +37,59 @@ impl PetState {
         ""
     }
 
-    /// Multi-line angel (hand-tuned from the sticker PNG).
-    ///
-    /// ```text
-    ///          ▄█▄           halo + cross top
-    ///         ████
-    ///    ▄▄ ██████ ▄▄        wing tips + head
-    ///   █  ████████  █       wings open
-    ///  █   ██▀  ▀██   █      eyes
-    ///  █   ████████   █      face / beard
-    ///   █  ████████  █       shoulders + cape
-    ///    █  ██████  █        torso / belt
-    ///     ██  ██  ██         legs
-    /// ```
+    /// Multi-line wings (same braille language as the welcome logo).
     pub fn sprite(self) -> &'static [&'static str] {
         match self {
-            Self::Idle => ANGEL_IDLE,
-            Self::Working => ANGEL_WORKING,
-            Self::Happy => ANGEL_HAPPY,
+            Self::Idle => WINGS_IDLE,
+            Self::Working => WINGS_WORKING,
+            Self::Happy => WINGS_HAPPY,
         }
     }
 
-    /// Preferred pet band height (must match `sprite().len()`).
-    pub const BAND_HEIGHT: u16 = 9;
+    /// Matches `sprite().len()` — compact welcome wing art (logo05).
+    pub const BAND_HEIGHT: u16 = 10;
 }
 
-/// Idle: open eyes, open wings.
-const ANGEL_IDLE: &[&str] = &[
-    "         ▄█▄         ",
-    "        ████         ",
-    "   ▄▄  ██████  ▄▄    ",
-    "  █   ████████   █   ",
-    " █    ██▀  ▀██    █  ",
-    " █    ████████    █  ",
-    "  █   ████████   █   ",
-    "   █   ██████   █    ",
-    "    ██  ████  ██     ",
+// Compact wing pair from `logo05.txt` (welcome). Fixed width 49.
+const WINGS_IDLE: &[&str] = &[
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠰⣶⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣶⠆         ",
+    "⠀⠀⠀⠀⠀⠀⠀⣠⢿⣷⠼⠓⠻⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⠟⠛⠢⢼⡻⣆⡀      ",
+    "⠀⠀⠀⠀⢀⣾⡟⠁⡄⢸⠻⢀⠰⣄⢹⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡏⢀⠎⣀⠟⡇⢲⠀⠻⡷⣄    ",
+    "⠀⠀⣰⠃⡼⠀⣿⡎⠀⣿⡆⡉⢾⣆⣈⠳⠹⢦⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⠟⠿⣁⣸⡿⢛⢶⣿⠀⢸⢿⠀⢳⠘⣧  ",
+    "⢠⣿⠞⡟⠀⢸⠀⡇⠀⡟⣿⣷⡇⡄⣌⠙⠻⢿⣷⣿⣲⣤⣹⣦⡀⣰⣏⣡⠔⣫⣷⣿⠟⠋⣁⢠⢹⣷⣿⢻⠀⢸⠀⡇⠀⢹⠳⣽⡀",
+    "⠀⠀⣸⠀⢸⠁⠸⣷⠀⢸⠀⢸⡈⠛⠛⠛⢿⣿⣿⣿⣾⣴⠸⣿⢵⣿⠏⡆⣷⣿⣿⢿⡿⠟⠛⠛⢁⡏⠀⡎⠀⣼⡇⠀⡇⠀⢷  ",
+    "⠀⠸⣿⡾⡇⠀⠀⣿⣇⠀⢧⠀⠈⢧⣇⣏⠀⡟⢻⠇⢸⠷⠈⠁⠀⠈⠁⠸⡇⠸⣏⡿⡀⢹⣼⣾⠁⠀⡸⠀⢸⢻⠀⠀⢸⣷⣾  ",
+    "⠀⠀⠀⠀⡇⠀⠀⣿⠀⢧⠀⢱⠀⠀⢹⡌⠀⠈⠙⣧⣼⠀⠀⠀⠀⠀⠀⠀⢷⣼⠃⠁⠀⢁⡟⠀⠀⡜⠀⣸⠀⢸⠀⠀⢸    ",
+    "⠀⠀⠀⠀⢹⡆⠀⣿⠀⠀⢹⡀⠘⡄⠀⠈⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⠃⠀⢀⠇⢀⡎⠀⠀⢸⠀⠀⡇    ",
+    "⠀⠀⠀⠀⠀⠸⣼⡏⢧⠀⠀⠈⢧⠀⢳⡀⠈⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠃⠀⡼⠁⡸⠁⠀⠀⡸⢋⣧⠏     ",
 ];
 
-/// Working: eyes as a line (focused).
-const ANGEL_WORKING: &[&str] = &[
-    "         ▄█▄         ",
-    "        ████         ",
-    "   ▄▄  ██████  ▄▄    ",
-    "  █   ████████   █   ",
-    " █    ██▀▀▀▀██    █  ",
-    " █    ████████    █  ",
-    "  █   ████████   █   ",
-    "   █   ██████   █    ",
-    "    ██  ████  ██     ",
+// Same wings, slightly denser mid-band (working pulse).
+const WINGS_WORKING: &[&str] = &[
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠰⣶⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣶⠆         ",
+    "⠀⠀⠀⠀⠀⠀⠀⣠⢿⣷⠼⠓⠻⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⠟⠛⠢⢼⡻⣆⡀      ",
+    "⠀⠀⠀⠀⢀⣾⡟⠁⡄⢸⠻⢀⠰⣄⢹⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡏⢀⠎⣀⠟⡇⢲⠀⠻⡷⣄    ",
+    "⠀⠀⣰⠃⡼⠀⣿⡎⠀⣿⡆⡉⢾⣆⣈⠳⠹⢦⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⠟⠿⣁⣸⡿⢛⢶⣿⠀⢸⢿⠀⢳⠘⣧  ",
+    "⢠⣿⠞⡟⠀⢸⣿⡇⠀⡟⣿⣷⡇⡄⣌⠙⠻⢿⣷⣿⣲⣤⣹⣦⡀⣰⣏⣡⠔⣫⣷⣿⠟⠋⣁⢠⢹⣷⣿⢻⠀⢸⣿⡇⠀⢹⠳⣽⡀",
+    "⠀⠀⣸⠀⢸⠁⠸⣷⠀⢸⠀⢸⡈⠛⠛⠛⢿⣿⣿⣿⣾⣴⠸⣿⢵⣿⠏⡆⣷⣿⣿⢿⡿⠟⠛⠛⢁⡏⠀⡎⠀⣼⡇⠀⡇⠀⢷  ",
+    "⠀⠸⣿⡾⡇⠀⠀⣿⣇⠀⢧⠀⠈⢧⣇⣏⠀⡟⢻⠇⢸⠷⠈⠁⠀⠈⠁⠸⡇⠸⣏⡿⡀⢹⣼⣾⠁⠀⡸⠀⢸⢻⠀⠀⢸⣷⣾  ",
+    "⠀⠀⠀⠀⡇⠀⠀⣿⠀⢧⠀⢱⠀⠀⢹⡌⠀⠈⠙⣧⣼⠀⠀⠀⠀⠀⠀⠀⢷⣼⠃⠁⠀⢁⡟⠀⠀⡜⠀⣸⠀⢸⠀⠀⢸    ",
+    "⠀⠀⠀⠀⢹⡆⠀⣿⠀⠀⢹⡀⠘⡄⠀⠈⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⠃⠀⢀⠇⢀⡎⠀⠀⢸⠀⠀⡇    ",
+    "⠀⠀⠀⠀⠀⠸⣼⡏⢧⠀⠀⠈⢧⠀⢳⡀⠈⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠃⠀⡼⠁⡸⠁⠀⠀⡸⢋⣧⠏     ",
 ];
 
-/// Happy: sparkles on the halo.
-const ANGEL_HAPPY: &[&str] = &[
-    "        *▄█▄*        ",
-    "        ████         ",
-    "   ▄▄  ██████  ▄▄    ",
-    "  █   ████████   █   ",
-    " █    ██▀  ▀██    █  ",
-    " █    ████████    █  ",
-    "  █   ████████   █   ",
-    "   █   ██████   █    ",
-    "    ██  ████  ██     ",
+// Wing-tip sparkles.
+const WINGS_HAPPY: &[&str] = &[
+    "⠀⠀⠀⠀⠀⠀⠀⠀*⠰⣶⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣶⠆*        ",
+    "⠀⠀⠀⠀⠀⠀⠀⣠⢿⣷⠼⠓⠻⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⠟⠛⠢⢼⡻⣆⡀      ",
+    "⠀⠀⠀⠀⢀⣾⡟⠁⡄⢸⠻⢀⠰⣄⢹⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡏⢀⠎⣀⠟⡇⢲⠀⠻⡷⣄    ",
+    "⠀⠀⣰⠃⡼⠀⣿⡎⠀⣿⡆⡉⢾⣆⣈⠳⠹⢦⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⠟⠿⣁⣸⡿⢛⢶⣿⠀⢸⢿⠀⢳⠘⣧  ",
+    "⢠⣿⠞⡟⠀⢸⠀⡇⠀⡟⣿⣷⡇⡄⣌⠙⠻⢿⣷⣿⣲⣤⣹⣦⡀⣰⣏⣡⠔⣫⣷⣿⠟⠋⣁⢠⢹⣷⣿⢻⠀⢸⠀⡇⠀⢹⠳⣽⡀",
+    "⠀⠀⣸⠀⢸⠁⠸⣷⠀⢸⠀⢸⡈⠛⠛⠛⢿⣿⣿⣿⣾⣴⠸⣿⢵⣿⠏⡆⣷⣿⣿⢿⡿⠟⠛⠛⢁⡏⠀⡎⠀⣼⡇⠀⡇⠀⢷  ",
+    "⠀⠸⣿⡾⡇⠀⠀⣿⣇⠀⢧⠀⠈⢧⣇⣏⠀⡟⢻⠇⢸⠷⠈⠁⠀⠈⠁⠸⡇⠸⣏⡿⡀⢹⣼⣾⠁⠀⡸⠀⢸⢻⠀⠀⢸⣷⣾  ",
+    "⠀⠀⠀⠀⡇⠀⠀⣿⠀⢧⠀⢱⠀⠀⢹⡌⠀⠈⠙⣧⣼⠀⠀⠀⠀⠀⠀⠀⢷⣼⠃⠁⠀⢁⡟⠀⠀⡜⠀⣸⠀⢸⠀⠀⢸    ",
+    "⠀⠀⠀⠀⢹⡆⠀⣿⠀⠀⢹⡀⠘⡄⠀⠈⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⠃⠀⢀⠇⢀⡎⠀⠀⢸⠀⠀⡇    ",
+    "⠀⠀⠀⠀⠀⠸⣼⡏⢧⠀⠀⠈⢧⠀⢳⡀⠈⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠃⠀⡼⠁⡸⠁⠀⠀⡸⢋⣧⠏     ",
 ];
 
 /// Map session activity flags → pet state (pure, testable).
@@ -164,39 +154,18 @@ mod tests {
     }
 
     #[test]
-    fn sprite_reads_as_angel_silhouette() {
+    fn sprite_matches_welcome_wing_style() {
         for s in [PetState::Idle, PetState::Working, PetState::Happy] {
             let rows = s.sprite();
-            assert_eq!(rows.len(), PetState::BAND_HEIGHT as usize);
-            // Halo at top center
-            assert!(rows[0].contains('▄') || rows[0].contains('█') || rows[0].contains('*'));
-            // Wings: outer columns have ink on mid rows
-            let mid = rows[3];
-            let trimmed = mid.trim_end();
+            assert_eq!(rows.len(), PetState::BAND_HEIGHT as usize, "{s:?}");
+            // Braille present (same family as welcome logo)
             assert!(
-                trimmed.starts_with('█') || trimmed.starts_with(' '),
-                "wing row shape: {mid:?}"
+                rows.iter().any(|r| r.chars().any(|c| ('\u{2800}'..='\u{28ff}').contains(&c))),
+                "{s:?} missing braille"
             );
-            // Face gap (eyes) only on idle/happy
-            if matches!(s, PetState::Idle | PetState::Happy) {
-                assert!(
-                    rows[4].contains('▀') || rows[4].contains(' '),
-                    "expected eye detail on {s:?}: {:?}",
-                    rows[4]
-                );
-            }
-            // Not a solid rectangle
-            let all_solid = rows.iter().all(|r| r.chars().filter(|c| *c != ' ').all(|c| c == '█'));
-            assert!(!all_solid, "must not be a solid blob");
-        }
-    }
-
-    #[test]
-    fn sprites_are_same_width() {
-        for s in [PetState::Idle, PetState::Working, PetState::Happy] {
-            let rows = s.sprite();
-            let w = rows[0].chars().count();
-            assert!(rows.iter().all(|r| r.chars().count() == w), "{s:?}");
+            // Wing pair: both left and right density
+            let mid = rows[4];
+            assert!(mid.contains('⣿') || mid.contains('⣷'), "dense mid wing: {mid}");
         }
     }
 
