@@ -1,6 +1,7 @@
-//! Global Arch pet chrome — monochrome **angel wings** (not a full figure).
+//! Global Arch pet chrome — monochrome braille **angel** sprites.
 //!
-//! Wings read clearly at status-bar scale and stay monochrome-friendly.
+//! Source silhouette: `assets/arch/angel-gemini.svg` (Gemini angel).
+//! Status bar uses a 1-line glyph; multi-line sprites available for tests.
 
 /// Activity-driven pet states for the always-on chrome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -22,49 +23,46 @@ impl PetState {
         }
     }
 
-    /// Compact wing pair for the status bar.
+    /// Compact braille angel for the status bar (halo + wings + body).
     ///
-    /// Left wing · center · right wing (mono block / slash geometry).
+    /// Extracted/downscaled from the Gemini angel SVG silhouette.
     pub fn glyph(self) -> &'static str {
         match self {
-            // open / calm
-            Self::Idle => "╱◥◣╲",
-            // folded / focused
-            Self::Working => "╱▶◀╲",
-            // flared / celebrate
-            Self::Happy => "╱★★╲",
+            // calm: open wings
+            Self::Idle => "⣿⢟⣼",
+            // focused: tighter center
+            Self::Working => "⣿⢹⣏",
+            // celebrate: denser wing tips
+            Self::Happy => "⣿⣿⣧",
         }
     }
 
     /// Short label after the glyph.
     pub fn label(self) -> &'static str {
         match self {
-            Self::Idle => "wings",
+            Self::Idle => "angel",
             Self::Working => "busy",
             Self::Happy => "yay",
         }
     }
 
-    /// Multi-line wing sprite (optional wider chrome / tests).
+    /// Multi-line braille angel (downscaled from SVG silhouette).
     pub fn sprite(self) -> &'static [&'static str] {
         match self {
             Self::Idle => &[
-                "  ╱◥    ◣╲  ",
-                " ╱◥█    █◣╲ ",
-                "╱◥██    ██◣╲",
-                "◥███    ███◣",
+                "⣿⣿⢟⣼",
+                "⣿⢹⣏⣿",
+                "⣿⣿⣧⣿",
             ],
             Self::Working => &[
-                "  ╱▶    ◀╲  ",
-                " ╱▶█    █◀╲ ",
-                "╱▶██    ██◀╲",
-                "▶███    ███◀",
+                "⣿⣿⢿⣵",
+                "⣽⢸⣏⣯",
+                "⢿⣿⠧⡿",
             ],
             Self::Happy => &[
-                "  ╱★    ★╲  ",
-                " ╱★█    █★╲ ",
-                "╱★██    ██★╲",
-                "★███    ███★",
+                "⣾⣿⢿⣽",
+                "⣿⢸⣏⣿",
+                "⢿⣿⣷⡿",
             ],
         }
     }
@@ -95,7 +93,7 @@ pub fn next_pet_state(prev: PetState, turn_running: bool, turn_just_ended: bool)
     PetState::Idle
 }
 
-/// Single-line chrome: `╱◥◣╲ wings`.
+/// Single-line chrome: `⣿⢟⣼ angel`.
 pub fn format_pet_chrome(state: PetState) -> String {
     format!("{} {}", state.glyph(), state.label())
 }
@@ -126,28 +124,28 @@ mod tests {
     }
 
     #[test]
-    fn chrome_is_wings_not_full_angel() {
+    fn chrome_is_braille_angel() {
         let line = format_pet_chrome(PetState::Idle);
         assert!(line.contains(PetState::Idle.glyph()));
-        assert!(line.contains("wings"));
-        assert!(!line.contains("angel"), "label is wings-only: {line}");
-        // Wing strokes present
-        assert!(line.contains('╱') && line.contains('╲'), "{line}");
+        assert!(line.contains("angel"));
+        // Braille block range U+2800–U+28FF
+        assert!(
+            line.chars().any(|c| ('\u{2800}'..='\u{28ff}').contains(&c)),
+            "expected braille in {line}"
+        );
     }
 
     #[test]
-    fn sprite_is_paired_wings() {
+    fn sprite_rows_are_braille() {
         for s in [PetState::Idle, PetState::Working, PetState::Happy] {
             let rows = s.sprite();
             assert!(rows.len() >= 3, "{s:?}");
-            let art = format_pet_sprite(s);
-            assert!(art.contains('╱') || art.contains('╲'));
-            // Two sides with a gap in the middle (paired wings)
-            assert!(
-                rows.last().unwrap().contains("    "),
-                "expected wing gap: {:?}",
-                rows.last()
-            );
+            for row in rows {
+                assert!(
+                    row.chars().any(|c| ('\u{2800}'..='\u{28ff}').contains(&c)),
+                    "{s:?} row not braille: {row}"
+                );
+            }
         }
     }
 

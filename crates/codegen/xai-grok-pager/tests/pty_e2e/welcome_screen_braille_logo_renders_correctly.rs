@@ -29,17 +29,17 @@ async fn welcome_screen_braille_logo_renders_correctly() {
 
     let screen = harness.screen_contents();
 
-    // Multi-byte block / wing geometry from logo07.txt.
+    // Multi-byte Braille from logo07.txt (angel-wing art).
     // If the writer mangles UTF-8, these 3-byte sequences fall apart.
     assert!(
-        screen.contains('█'),
-        "Full block █ (U+2588) not found in screen — \
+        screen.contains('⣿'),
+        "Braille ⣿ (U+28FF) not found in screen — \
          logo may be garbled by code-page misinterpretation.\n\
          Screen contents:\n{screen}"
     );
     assert!(
-        screen.contains('◥') || screen.contains('◣'),
-        "Wing corner blocks ◥/◣ not found in screen — logo may be garbled.\n\
+        screen.contains('⣶') || screen.contains('⣷'),
+        "Braille wing cells ⣶/⣷ not found in screen — logo may be garbled.\n\
          Screen contents:\n{screen}"
     );
 
