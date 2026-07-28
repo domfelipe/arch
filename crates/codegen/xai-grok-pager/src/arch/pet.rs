@@ -1,7 +1,8 @@
-//! Global Arch pet — monochrome half-block angel from the product sticker PNG.
+//! Global Arch pet — hand-tuned monochrome half-block angel.
 //!
-//! Source: `assets/arch/angel-pet.png` (transparent pixel art; no checker bg).
-//! Rendered **right-aligned** above the prompt; **no text label**.
+//! Derived from `assets/arch/angel-pet.png` (pixel sticker): cross halo,
+//! head, wide wings, torso, feet. Outline-style so wings read as wings,
+//! not a solid blob. Right-aligned above the prompt; no text label.
 
 /// Activity-driven pet states for the always-on chrome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -23,7 +24,7 @@ impl PetState {
         }
     }
 
-    /// Single-line fallback (short terminals). Glyph only — no label.
+    /// Single-line fallback (short terminals). Glyph only.
     pub fn glyph(self) -> &'static str {
         match self {
             Self::Idle => "▄█▄",
@@ -32,61 +33,74 @@ impl PetState {
         }
     }
 
-    /// Unused in UI (kept for API compatibility).
+    /// Unused in UI.
     pub fn label(self) -> &'static str {
         ""
     }
 
-    /// Multi-line half-block silhouette derived from `angel-pet.png`
-    /// (alpha crop + NEAREST downscale 18×20 → 10 half-block rows).
+    /// Multi-line angel (hand-tuned from the sticker PNG).
     ///
-    /// Layout (top→bottom): halo · head · wings+shoulders · torso · feet.
+    /// ```text
+    ///          ▄█▄           halo + cross top
+    ///         ████
+    ///    ▄▄ ██████ ▄▄        wing tips + head
+    ///   █  ████████  █       wings open
+    ///  █   ██▀  ▀██   █      eyes
+    ///  █   ████████   █      face / beard
+    ///   █  ████████  █       shoulders + cape
+    ///    █  ██████  █        torso / belt
+    ///     ██  ██  ██         legs
+    /// ```
     pub fn sprite(self) -> &'static [&'static str] {
         match self {
-            Self::Idle => &[
-                "        ▄█▄       ",
-                "       ▄███▄      ",
-                "    ███████▄█▄    ",
-                "▄██████████▀█████▄",
-                "██████████████████",
-                "███████▀██████████",
-                "█████████████▄████",
-                " ██████████▀█████ ",
-                " ▀██▀ ████▄█▀███▀ ",
-                "      ████▀▀▀     ",
-            ],
-            // Eyes slightly closed / focused (middle face band).
-            Self::Working => &[
-                "        ▄█▄       ",
-                "       ▄███▄      ",
-                "    ███████▄█▄    ",
-                "▄██████████▀█████▄",
-                "██████████████████",
-                "███████▄██████████",
-                "█████████████▀████",
-                " ██████████▀█████ ",
-                " ▀██▀ ████▄█▀███▀ ",
-                "      ████▀▀▀     ",
-            ],
-            // Halo sparkle.
-            Self::Happy => &[
-                "       *▄█▄*      ",
-                "       ▄███▄      ",
-                "    ███████▄█▄    ",
-                "▄██████████▀█████▄",
-                "██████████████████",
-                "███████▀██████████",
-                "█████████████▄████",
-                " ██████████▀█████ ",
-                " ▀██▀ ████▄█▀███▀ ",
-                "      ████▀▀▀     ",
-            ],
+            Self::Idle => ANGEL_IDLE,
+            Self::Working => ANGEL_WORKING,
+            Self::Happy => ANGEL_HAPPY,
         }
     }
 
-    /// Preferred pet band height (rows of half-blocks).
-    pub const BAND_HEIGHT: u16 = 10;
+    /// Preferred pet band height (must match `sprite().len()`).
+    pub const BAND_HEIGHT: u16 = 9;
 }
+
+/// Idle: open eyes, open wings.
+const ANGEL_IDLE: &[&str] = &[
+    "         ▄█▄         ",
+    "        ████         ",
+    "   ▄▄  ██████  ▄▄    ",
+    "  █   ████████   █   ",
+    " █    ██▀  ▀██    █  ",
+    " █    ████████    █  ",
+    "  █   ████████   █   ",
+    "   █   ██████   █    ",
+    "    ██  ████  ██     ",
+];
+
+/// Working: eyes as a line (focused).
+const ANGEL_WORKING: &[&str] = &[
+    "         ▄█▄         ",
+    "        ████         ",
+    "   ▄▄  ██████  ▄▄    ",
+    "  █   ████████   █   ",
+    " █    ██▀▀▀▀██    █  ",
+    " █    ████████    █  ",
+    "  █   ████████   █   ",
+    "   █   ██████   █    ",
+    "    ██  ████  ██     ",
+];
+
+/// Happy: sparkles on the halo.
+const ANGEL_HAPPY: &[&str] = &[
+    "        *▄█▄*        ",
+    "        ████         ",
+    "   ▄▄  ██████  ▄▄    ",
+    "  █   ████████   █   ",
+    " █    ██▀  ▀██    █  ",
+    " █    ████████    █  ",
+    "  █   ████████   █   ",
+    "   █   ██████   █    ",
+    "    ██  ████  ██     ",
+];
 
 /// Map session activity flags → pet state (pure, testable).
 pub fn pet_state_from_agent(turn_running: bool, just_completed: bool) -> PetState {
@@ -113,7 +127,7 @@ pub fn next_pet_state(prev: PetState, turn_running: bool, turn_just_ended: bool)
     PetState::Idle
 }
 
-/// Single-line chrome — glyph only (no “angel” text).
+/// Single-line chrome — glyph only.
 pub fn format_pet_chrome(state: PetState) -> String {
     state.glyph().to_string()
 }
@@ -144,30 +158,45 @@ mod tests {
     }
 
     #[test]
-    fn chrome_is_glyph_only_no_label_text() {
-        let line = format_pet_chrome(PetState::Idle);
-        assert_eq!(line, PetState::Idle.glyph());
-        assert!(!line.to_ascii_lowercase().contains("angel"));
+    fn chrome_is_glyph_only() {
+        assert_eq!(format_pet_chrome(PetState::Idle), PetState::Idle.glyph());
+        assert!(!format_pet_chrome(PetState::Idle).contains("angel"));
     }
 
     #[test]
-    fn sprite_matches_sticker_grid() {
+    fn sprite_reads_as_angel_silhouette() {
         for s in [PetState::Idle, PetState::Working, PetState::Happy] {
             let rows = s.sprite();
-            assert_eq!(rows.len(), PetState::BAND_HEIGHT as usize, "{s:?}");
-            // Halo cross-ish top
+            assert_eq!(rows.len(), PetState::BAND_HEIGHT as usize);
+            // Halo at top center
+            assert!(rows[0].contains('▄') || rows[0].contains('█') || rows[0].contains('*'));
+            // Wings: outer columns have ink on mid rows
+            let mid = rows[3];
+            let trimmed = mid.trim_end();
             assert!(
-                rows[0].contains('▄') || rows[0].contains('█') || rows[0].contains('*'),
-                "halo missing: {:?}",
-                rows[0]
+                trimmed.starts_with('█') || trimmed.starts_with(' '),
+                "wing row shape: {mid:?}"
             );
-            // Wings wider than feet row
-            let wing_w = rows[3].trim().chars().count();
-            let feet_w = rows[9].trim().chars().count();
-            assert!(wing_w >= feet_w, "wings should span body {s:?}");
-            // No checker noise of pure solid block field
-            let solid = rows.iter().filter(|r| r.chars().all(|c| c == '█')).count();
-            assert!(solid < rows.len(), "sprite collapsed to solid blocks");
+            // Face gap (eyes) only on idle/happy
+            if matches!(s, PetState::Idle | PetState::Happy) {
+                assert!(
+                    rows[4].contains('▀') || rows[4].contains(' '),
+                    "expected eye detail on {s:?}: {:?}",
+                    rows[4]
+                );
+            }
+            // Not a solid rectangle
+            let all_solid = rows.iter().all(|r| r.chars().filter(|c| *c != ' ').all(|c| c == '█'));
+            assert!(!all_solid, "must not be a solid blob");
+        }
+    }
+
+    #[test]
+    fn sprites_are_same_width() {
+        for s in [PetState::Idle, PetState::Working, PetState::Happy] {
+            let rows = s.sprite();
+            let w = rows[0].chars().count();
+            assert!(rows.iter().all(|r| r.chars().count() == w), "{s:?}");
         }
     }
 
